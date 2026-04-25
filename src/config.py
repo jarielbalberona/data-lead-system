@@ -23,6 +23,13 @@ PROPERTY_MANAGER_SOURCE_URLS = [
     "https://hoamanagementcompanies.net/california/hoa-management-companies-in-los-angeles-ca",
 ]
 
+INTERIOR_DESIGNER_SOURCE_URLS = [
+    "https://www.interiordesignlink.com/california-interior-designers-decorators.html",
+    "https://www.interiordesignlink.com/illinois-interior-designers-decorators.html",
+    "https://www.interiordesignlink.com/texas-interior-designers-decorators.html",
+    "https://www.interiordesignlink.com/chicago-interior-designers-decorators-illinois-60290.html",
+]
+
 
 @dataclass(frozen=True)
 class PipelineConfig:
