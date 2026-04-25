@@ -195,6 +195,116 @@ def _build_outreach_suppression_key(row: pd.Series) -> str:
     return ""
 
 
+def _assign_dedupe_status_and_reason(dataframe: pd.DataFrame) -> pd.DataFrame:
+    normalized = dataframe.copy()
+
+    contact_counts = normalized["contact_group_id"].value_counts().to_dict()
+    business_counts = normalized["business_group_id"].value_counts().to_dict()
+    location_counts = normalized["location_group_id"].value_counts().to_dict()
+
+    contact_location_counts = (
+        normalized.groupby("contact_group_id")["location_group_id"].nunique().to_dict()
+    )
+    business_location_counts = (
+        normalized.groupby("business_group_id")["location_group_id"].nunique().to_dict()
+    )
+
+    location_key_counts: dict[str, int] = {}
+    business_city_counts: dict[str, int] = {}
+    for _, row in normalized.iterrows():
+        address = str(row.get("normalized_address", "")).strip().lower()
+        city = str(row.get("normalized_city", "")).strip().lower()
+        state = str(row.get("normalized_state", "")).strip().lower()
+        business_signature = _business_signature(str(row.get("normalized_business_name", "")).strip())
+
+        if address and city and state:
+            location_key = f"{address}|{city}|{state}"
+            location_key_counts[location_key] = location_key_counts.get(location_key, 0) + 1
+
+        if business_signature and city:
+            business_city_key = f"{business_signature}|{city}"
+            business_city_counts[business_city_key] = business_city_counts.get(business_city_key, 0) + 1
+
+    dedupe_statuses: list[str] = []
+    dedupe_reasons: list[str] = []
+
+    for _, row in normalized.iterrows():
+        validation_status = str(row.get("validation_status", "")).strip()
+        if validation_status == "rejected_irrelevant":
+            dedupe_statuses.append("rejected_irrelevant")
+            dedupe_reasons.append(str(row.get("rejection_reason", "")).strip())
+            continue
+        if validation_status == "rejected_missing_required_fields":
+            dedupe_statuses.append("rejected_missing_required_fields")
+            dedupe_reasons.append(str(row.get("rejection_reason", "")).strip())
+            continue
+
+        contact_group_id = str(row.get("contact_group_id", "")).strip()
+        business_group_id = str(row.get("business_group_id", "")).strip()
+        location_group_id = str(row.get("location_group_id", "")).strip()
+        normalized_email = str(row.get("normalized_email", "")).strip()
+        normalized_phone = str(row.get("normalized_phone", "")).strip()
+        website_domain = str(row.get("website_domain", "")).strip()
+        address = str(row.get("normalized_address", "")).strip().lower()
+        city = str(row.get("normalized_city", "")).strip().lower()
+        state = str(row.get("normalized_state", "")).strip().lower()
+        business_signature = _business_signature(str(row.get("normalized_business_name", "")).strip())
+
+        if contact_counts.get(contact_group_id, 0) > 1:
+            if contact_location_counts.get(contact_group_id, 1) > 1:
+                dedupe_statuses.append("same_contact_multiple_locations")
+                if normalized_email:
+                    dedupe_reasons.append("Rows share the same normalized email across multiple locations.")
+                elif normalized_phone:
+                    dedupe_reasons.append("Rows share the same normalized phone across multiple locations.")
+                else:
+                    dedupe_reasons.append("Rows share the same strong contact identifier across multiple locations.")
+            else:
+                dedupe_statuses.append("confirmed_duplicate")
+                if normalized_email and normalized_phone:
+                    dedupe_reasons.append("Rows share the same normalized email and phone at the same location.")
+                elif normalized_email:
+                    dedupe_reasons.append("Rows share the same normalized email at the same location.")
+                else:
+                    dedupe_reasons.append("Rows share the same normalized phone at the same location.")
+            continue
+
+        if business_counts.get(business_group_id, 0) > 1:
+            if business_location_counts.get(business_group_id, 1) > 1:
+                dedupe_statuses.append("same_business_multiple_locations")
+                if website_domain:
+                    dedupe_reasons.append("Rows share the same website domain but represent multiple locations.")
+                else:
+                    dedupe_reasons.append("Rows share supported business identity evidence across multiple locations.")
+            else:
+                dedupe_statuses.append("confirmed_duplicate")
+                dedupe_reasons.append("Rows share business-level identity evidence at the same location.")
+            continue
+
+        location_key = f"{address}|{city}|{state}" if address and city and state else ""
+        business_city_key = f"{business_signature}|{city}" if business_signature and city else ""
+        if (location_key and location_key_counts.get(location_key, 0) > 1) or (
+            business_city_key and business_city_counts.get(business_city_key, 0) > 1
+        ):
+            dedupe_statuses.append("possible_duplicate_needs_review")
+            if location_key and location_key_counts.get(location_key, 0) > 1:
+                dedupe_reasons.append(
+                    "Rows share the same normalized address, city, and state without enough strong identity evidence to auto-merge."
+                )
+            else:
+                dedupe_reasons.append(
+                    "Rows share the same normalized business name and city without enough strong identity evidence to confirm a duplicate."
+                )
+            continue
+
+        dedupe_statuses.append("unique")
+        dedupe_reasons.append("No stronger duplicate, contact, or business grouping evidence was found.")
+
+    normalized["dedupe_status"] = dedupe_statuses
+    normalized["dedupe_reason"] = dedupe_reasons
+    return normalized
+
+
 def apply_identity_resolution(dataframe: pd.DataFrame) -> pd.DataFrame:
     normalized = dataframe.copy()
     if normalized.empty:
@@ -207,4 +317,5 @@ def apply_identity_resolution(dataframe: pd.DataFrame) -> pd.DataFrame:
     normalized = _assign_business_group_ids(normalized)
     normalized = _assign_location_group_ids(normalized)
     normalized["outreach_suppression_key"] = normalized.apply(_build_outreach_suppression_key, axis=1)
+    normalized = _assign_dedupe_status_and_reason(normalized)
     return normalized
