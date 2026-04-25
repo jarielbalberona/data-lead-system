@@ -174,6 +174,27 @@ def _assign_location_group_ids(dataframe: pd.DataFrame) -> pd.DataFrame:
     return normalized
 
 
+def _build_outreach_suppression_key(row: pd.Series) -> str:
+    normalized_email = str(row.get("normalized_email", "")).strip().lower()
+    if normalized_email:
+        return f"email:{normalized_email}"
+
+    normalized_phone = str(row.get("normalized_phone", "")).strip()
+    if normalized_phone:
+        return f"phone:{normalized_phone}"
+
+    website_domain = str(row.get("website_domain", "")).strip().lower()
+    if website_domain:
+        return f"domain:{website_domain}"
+
+    normalized_business_name = _business_signature(str(row.get("normalized_business_name", "")).strip())
+    normalized_city = str(row.get("normalized_city", "")).strip().lower()
+    if normalized_business_name and normalized_city:
+        return f"business_city:{normalized_business_name}|{normalized_city}"
+
+    return ""
+
+
 def apply_identity_resolution(dataframe: pd.DataFrame) -> pd.DataFrame:
     normalized = dataframe.copy()
     if normalized.empty:
@@ -185,4 +206,5 @@ def apply_identity_resolution(dataframe: pd.DataFrame) -> pd.DataFrame:
     normalized = _assign_contact_group_ids(normalized)
     normalized = _assign_business_group_ids(normalized)
     normalized = _assign_location_group_ids(normalized)
+    normalized["outreach_suppression_key"] = normalized.apply(_build_outreach_suppression_key, axis=1)
     return normalized
