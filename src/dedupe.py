@@ -119,6 +119,61 @@ def _assign_business_group_ids(dataframe: pd.DataFrame) -> pd.DataFrame:
     return normalized
 
 
+def _assign_location_group_ids(dataframe: pd.DataFrame) -> pd.DataFrame:
+    normalized = dataframe.copy()
+    location_groups: dict[str, list[int]] = {}
+
+    for index, row in normalized.iterrows():
+        address = str(row.get("normalized_address", "")).strip().lower()
+        city = str(row.get("normalized_city", "")).strip().lower()
+        state = str(row.get("normalized_state", "")).strip().lower()
+        if not address or not city or not state:
+            continue
+        key = f"{address}|{city}|{state}"
+        location_groups.setdefault(key, []).append(index)
+
+    location_group_ids: list[str] = []
+    row_to_location_group_id: dict[int, str] = {}
+    next_group_number = 1
+
+    for index, row in normalized.iterrows():
+        if index in row_to_location_group_id:
+            location_group_ids.append(row_to_location_group_id[index])
+            continue
+
+        address = str(row.get("normalized_address", "")).strip().lower()
+        city = str(row.get("normalized_city", "")).strip().lower()
+        state = str(row.get("normalized_state", "")).strip().lower()
+
+        if address and city and state:
+            key = f"{address}|{city}|{state}"
+            candidates = location_groups.get(key, [])
+            same_location_indexes = [
+                candidate_index
+                for candidate_index in candidates
+                if (
+                    str(normalized.loc[candidate_index, "business_group_id"]).strip()
+                    == str(row.get("business_group_id", "")).strip()
+                    or str(normalized.loc[candidate_index, "contact_group_id"]).strip()
+                    == str(row.get("contact_group_id", "")).strip()
+                )
+            ]
+        else:
+            same_location_indexes = []
+
+        location_group_id = f"location_{next_group_number:03d}"
+        next_group_number += 1
+
+        if same_location_indexes:
+            for candidate_index in same_location_indexes:
+                row_to_location_group_id[candidate_index] = location_group_id
+        row_to_location_group_id[index] = location_group_id
+        location_group_ids.append(location_group_id)
+
+    normalized["location_group_id"] = location_group_ids
+    return normalized
+
+
 def apply_identity_resolution(dataframe: pd.DataFrame) -> pd.DataFrame:
     normalized = dataframe.copy()
     if normalized.empty:
@@ -129,4 +184,5 @@ def apply_identity_resolution(dataframe: pd.DataFrame) -> pd.DataFrame:
 
     normalized = _assign_contact_group_ids(normalized)
     normalized = _assign_business_group_ids(normalized)
+    normalized = _assign_location_group_ids(normalized)
     return normalized
