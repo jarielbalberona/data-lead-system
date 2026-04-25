@@ -10,6 +10,12 @@ import phonenumbers
 TARGET_NICHES = {"property_manager", "interior_designer"}
 BUSINESS_SUFFIXES = {"llc", "l.l.c.", "inc", "inc.", "lp", "l.p.", "hoa", "poa", "co", "corp", "ltd"}
 ADDRESS_UPPER_TOKENS = {"nw", "ne", "sw", "se", "n", "s", "e", "w", "po", "box", "ste", "unit"}
+IRRELEVANT_NAME_PATTERNS = (
+    "your listing here",
+    "get listed today",
+    "management company directory",
+    "interior design link",
+)
 
 
 def _normalize_text(value: object) -> str:
@@ -237,6 +243,33 @@ def _normalize_location_fields(address: object, city: object, state: object) -> 
     return normalized_address, normalized_city, normalized_state
 
 
+def _validation_result(row: pd.Series) -> tuple[str, str]:
+    business_name = _normalize_text(row.get("business_name", ""))
+    niche = _normalize_text(row.get("niche", ""))
+    normalized_phone = _normalize_text(row.get("normalized_phone", ""))
+    normalized_email = _normalize_text(row.get("normalized_email", ""))
+    website_domain = _normalize_text(row.get("website_domain", ""))
+
+    if not business_name:
+        return "rejected_missing_required_fields", "Missing business name."
+
+    if niche not in TARGET_NICHES:
+        return "rejected_irrelevant", f"Niche `{niche}` is outside the assignment scope."
+
+    lowered_name = business_name.lower()
+    for pattern in IRRELEVANT_NAME_PATTERNS:
+        if pattern in lowered_name:
+            return "rejected_irrelevant", f"Business name matched irrelevant pattern `{pattern}`."
+
+    if not normalized_phone and not normalized_email and not website_domain:
+        return (
+            "rejected_missing_required_fields",
+            "No usable phone, email, or website domain was available for outreach or grouping.",
+        )
+
+    return "valid", ""
+
+
 def _ensure_column(dataframe: pd.DataFrame, column_name: str) -> None:
     if column_name not in dataframe.columns:
         dataframe[column_name] = ""
@@ -285,5 +318,9 @@ def normalize_records(records: list[dict[str, object]]) -> pd.DataFrame:
     dataframe["normalized_city"] = dataframe["city"].map(_normalize_text)
     dataframe["normalized_state"] = dataframe["state"].map(_normalize_text)
     dataframe["matches_target_niche"] = dataframe["niche"].isin(TARGET_NICHES)
+
+    validation_values = dataframe.apply(_validation_result, axis=1)
+    dataframe["validation_status"] = validation_values.map(lambda item: item[0])
+    dataframe["rejection_reason"] = validation_values.map(lambda item: item[1])
 
     return dataframe
