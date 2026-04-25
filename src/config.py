@@ -10,6 +10,18 @@ RAW_DIR = DATA_DIR / "raw"
 PROCESSED_DIR = DATA_DIR / "processed"
 FINAL_DIR = DATA_DIR / "final"
 DOCS_DIR = PROJECT_ROOT / "docs"
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 20
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
+
+PROPERTY_MANAGER_SOURCE_URLS = [
+    "https://hoamanagementcompanies.net/illinois/hoa-management-companies-in-chicago-il",
+    "https://hoamanagementcompanies.net/texas/hoa-management-companies-in-dallas-tx",
+    "https://hoamanagementcompanies.net/california/hoa-management-companies-in-los-angeles-ca",
+]
 
 
 @dataclass(frozen=True)
@@ -19,6 +31,8 @@ class PipelineConfig:
     processed_dir: Path = PROCESSED_DIR
     final_dir: Path = FINAL_DIR
     docs_dir: Path = DOCS_DIR
+    request_timeout_seconds: int = DEFAULT_REQUEST_TIMEOUT_SECONDS
+    user_agent: str = DEFAULT_USER_AGENT
 
     def ensure_directories(self) -> None:
         self.raw_dir.mkdir(parents=True, exist_ok=True)
