@@ -67,10 +67,23 @@ def _fetch_soup(session: requests.Session, url: str, config: PipelineConfig) -> 
     return BeautifulSoup(html, "html.parser")
 
 
-def _write_raw_records(records: list[RawLeadRecord], output_path: Path) -> None:
+def _snapshot_token(timestamp: str) -> str:
+    return timestamp.replace("-", "").replace(":", "").replace(".", "").replace("Z", "Z")
+
+
+def _write_raw_records(
+    records: list[RawLeadRecord],
+    output_path: Path,
+    extraction_timestamp: str,
+) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(
-        json.dumps([asdict(record) for record in records], indent=2),
+    archive_dir = output_path.parent / "archive" / output_path.stem
+    archive_dir.mkdir(parents=True, exist_ok=True)
+
+    payload = json.dumps([asdict(record) for record in records], indent=2)
+    output_path.write_text(payload, encoding="utf-8")
+    (archive_dir / f"{_snapshot_token(extraction_timestamp)}.json").write_text(
+        payload,
         encoding="utf-8",
     )
 
@@ -405,6 +418,7 @@ def extract_property_managers(config: PipelineConfig | None = None) -> list[dict
     active_config = config or PipelineConfig()
     active_config.ensure_directories()
     session = _build_session(active_config)
+    extraction_timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
     extracted_records: list[RawLeadRecord] = []
 
@@ -422,6 +436,7 @@ def extract_property_managers(config: PipelineConfig | None = None) -> list[dict
     _write_raw_records(
         extracted_records,
         active_config.raw_dir / "property_managers_raw.json",
+        extraction_timestamp,
     )
     return [asdict(record) for record in extracted_records]
 
@@ -430,6 +445,7 @@ def extract_interior_designers(config: PipelineConfig | None = None) -> list[dic
     active_config = config or PipelineConfig()
     active_config.ensure_directories()
     session = _build_session(active_config)
+    extraction_timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
     extracted_records: list[RawLeadRecord] = []
 
@@ -439,5 +455,6 @@ def extract_interior_designers(config: PipelineConfig | None = None) -> list[dic
     _write_raw_records(
         extracted_records,
         active_config.raw_dir / "interior_designers_raw.json",
+        extraction_timestamp,
     )
     return [asdict(record) for record in extracted_records]
