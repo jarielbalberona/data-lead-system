@@ -23,6 +23,7 @@ Minimal Python pipeline for Part 1 of the hiring assignment.
 - `docs/identity-model.md`
 - `docs/source-selection.md`
 - `docs/process-explanation.md`
+- `docs/quality-summary.md`
 - `src/run_pipeline.py`
   - pipeline entrypoint
 
@@ -58,6 +59,8 @@ python3 src/run_pipeline.py
   - `data/raw/archive/...`
 - final export:
   - `data/final/leads.csv`
+- generated review summary:
+  - `docs/quality-summary.md`
 
 ## How Dedupe and Outreach Suppression Work
 
