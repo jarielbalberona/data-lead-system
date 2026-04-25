@@ -8,6 +8,8 @@ import phonenumbers
 
 
 TARGET_NICHES = {"property_manager", "interior_designer"}
+BUSINESS_SUFFIXES = {"llc", "l.l.c.", "inc", "inc.", "lp", "l.p.", "hoa", "poa", "co", "corp", "ltd"}
+ADDRESS_UPPER_TOKENS = {"nw", "ne", "sw", "se", "n", "s", "e", "w", "po", "box", "ste", "unit"}
 
 
 def _normalize_text(value: object) -> str:
@@ -21,6 +23,31 @@ def _normalize_email(email: object) -> str:
     if normalized.startswith("mailto:"):
         normalized = normalized.removeprefix("mailto:")
     return normalized
+
+
+def _smart_title(value: str, uppercase_tokens: set[str] | None = None) -> str:
+    if not value:
+        return ""
+
+    tokens = value.split(" ")
+    normalized_tokens: list[str] = []
+    forced_upper = uppercase_tokens or set()
+
+    for token in tokens:
+        stripped = token.strip()
+        lowered = stripped.lower()
+
+        if lowered in forced_upper:
+            normalized_tokens.append(lowered.upper())
+            continue
+
+        if "/" in stripped:
+            normalized_tokens.append("/".join(part.capitalize() for part in stripped.split("/")))
+            continue
+
+        normalized_tokens.append(stripped.capitalize())
+
+    return " ".join(normalized_tokens)
 
 
 def _normalize_phone(phone: object) -> str:
@@ -67,6 +94,149 @@ def _normalize_website(website: object) -> tuple[str, str]:
     return cleaned_website, netloc
 
 
+def _normalize_business_name(business_name: object) -> str:
+    normalized = _normalize_text(business_name)
+    if not normalized:
+        return ""
+
+    if normalized.isupper() or normalized.islower():
+        tokens = normalized.split(" ")
+        formatted_tokens: list[str] = []
+        for token in tokens:
+            lowered = token.lower()
+            if lowered in BUSINESS_SUFFIXES:
+                formatted_tokens.append(lowered.upper().replace(".", ""))
+            else:
+                formatted_tokens.append(token.capitalize())
+        return " ".join(formatted_tokens)
+
+    return normalized
+
+
+def _split_address_and_city(tokens: list[str], state: str) -> tuple[str, str, str]:
+    if not tokens:
+        return "", "", state
+
+    if len(tokens) >= 3 and tokens[0].lower() == "po" and tokens[1].lower() == "box":
+        address_tokens = tokens[:3]
+        city_tokens = tokens[3:]
+        return _normalize_text(" ".join(address_tokens)), _normalize_text(" ".join(city_tokens)), state
+
+    street_suffixes = {
+        "aly",
+        "ave",
+        "avenue",
+        "blvd",
+        "boulevard",
+        "cir",
+        "circle",
+        "court",
+        "ct",
+        "dr",
+        "drive",
+        "hwy",
+        "lane",
+        "ln",
+        "loop",
+        "parkway",
+        "pkwy",
+        "pl",
+        "place",
+        "rd",
+        "road",
+        "sq",
+        "st",
+        "street",
+        "ter",
+        "terrace",
+        "trl",
+        "way",
+    }
+    unit_markers = {"suite", "ste", "#", "unit"}
+    city_prefixes = {
+        "beach",
+        "carlos",
+        "cajon",
+        "cordova",
+        "el",
+        "francisco",
+        "hills",
+        "island",
+        "jose",
+        "lake",
+        "los",
+        "monica",
+        "new",
+        "park",
+        "rancho",
+        "san",
+        "santa",
+        "tinley",
+        "west",
+        "woodlands",
+    }
+
+    address_end_index = -1
+    for index, token in enumerate(tokens):
+        normalized_token = token.rstrip(".,").lower()
+        if normalized_token in street_suffixes:
+            address_end_index = index
+            break
+
+    if address_end_index >= 0:
+        next_index = address_end_index + 1
+        if next_index < len(tokens) and tokens[next_index].rstrip(".,").lower() in unit_markers:
+            address_end_index = next_index
+            if address_end_index + 1 < len(tokens):
+                address_end_index += 1
+
+        address_tokens = tokens[: address_end_index + 1]
+        city_tokens = tokens[address_end_index + 1 :]
+    else:
+        city_token_count = 2 if len(tokens) >= 3 and tokens[-2].lower() in city_prefixes else 1
+        address_tokens = tokens[:-city_token_count]
+        city_tokens = tokens[-city_token_count:]
+
+    return _normalize_text(" ".join(address_tokens)), _normalize_text(" ".join(city_tokens)), state
+
+
+def _parse_location_from_address(address: str) -> tuple[str, str, str]:
+    normalized = _normalize_text(address)
+    state_match = re.search(r",\s*(?P<state>[A-Z]{2})\s+\d{5}(?:-\d{4})?$", normalized)
+    if not state_match:
+        return normalized, "", ""
+
+    state = _normalize_text(state_match.group("state"))
+    address_city_text = _normalize_text(normalized[: state_match.start()])
+    tokens = address_city_text.replace(",", "").split()
+    return _split_address_and_city(tokens, state)
+
+
+def _normalize_location_fields(address: object, city: object, state: object) -> tuple[str, str, str]:
+    normalized_address = _normalize_text(address)
+    normalized_city = _normalize_text(city)
+    normalized_state = _normalize_text(state).upper()
+
+    if normalized_address and (not normalized_city or not normalized_state):
+        parsed_address, parsed_city, parsed_state = _parse_location_from_address(normalized_address)
+        if parsed_city and not normalized_city:
+            normalized_city = parsed_city
+        if parsed_state and not normalized_state:
+            normalized_state = parsed_state
+        normalized_address = parsed_address
+
+    if normalized_address and (normalized_address.isupper() or normalized_address.islower()):
+        normalized_address = _smart_title(normalized_address, uppercase_tokens=ADDRESS_UPPER_TOKENS)
+
+    if normalized_city and (normalized_city.isupper() or normalized_city.islower()):
+        normalized_city = _smart_title(normalized_city)
+
+    if normalized_state:
+        normalized_state = normalized_state.upper()
+
+    return normalized_address, normalized_city, normalized_state
+
+
 def _ensure_column(dataframe: pd.DataFrame, column_name: str) -> None:
     if column_name not in dataframe.columns:
         dataframe[column_name] = ""
@@ -94,13 +264,26 @@ def normalize_records(records: list[dict[str, object]]) -> pd.DataFrame:
     dataframe["niche"] = dataframe["niche"].map(_normalize_text)
     dataframe["phone"] = dataframe["phone"].map(_normalize_text)
     dataframe["email"] = dataframe["email"].map(_normalize_email)
+    dataframe["business_name"] = dataframe["business_name"].map(_normalize_business_name)
 
     website_values = dataframe["website"].map(_normalize_website)
     dataframe["website"] = website_values.map(lambda item: item[0])
     dataframe["website_domain"] = website_values.map(lambda item: item[1])
 
+    location_values = dataframe.apply(
+        lambda row: _normalize_location_fields(row["address"], row["city"], row["state"]),
+        axis=1,
+    )
+    dataframe["address"] = location_values.map(lambda item: item[0])
+    dataframe["city"] = location_values.map(lambda item: item[1])
+    dataframe["state"] = location_values.map(lambda item: item[2])
+
     dataframe["normalized_phone"] = dataframe["phone"].map(_normalize_phone)
     dataframe["normalized_email"] = dataframe["email"]
+    dataframe["normalized_business_name"] = dataframe["business_name"].map(_normalize_text)
+    dataframe["normalized_address"] = dataframe["address"].map(_normalize_text)
+    dataframe["normalized_city"] = dataframe["city"].map(_normalize_text)
+    dataframe["normalized_state"] = dataframe["state"].map(_normalize_text)
     dataframe["matches_target_niche"] = dataframe["niche"].isin(TARGET_NICHES)
 
     return dataframe
