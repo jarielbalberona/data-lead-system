@@ -220,6 +220,8 @@ def _parse_location_from_address(address: str) -> tuple[str, str, str]:
 
 def _normalize_location_fields(address: object, city: object, state: object) -> tuple[str, str, str]:
     normalized_address = _normalize_text(address)
+    if normalized_address.startswith("/>"):
+        normalized_address = normalized_address.removeprefix("/>").strip()
     normalized_city = _normalize_text(city)
     normalized_state = _normalize_text(state).upper()
 
