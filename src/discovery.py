@@ -4,12 +4,14 @@ import argparse
 import json
 import re
 import time
+from collections import defaultdict
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
 import requests
+from bs4 import BeautifulSoup
 from config import PipelineConfig
 
 
@@ -65,6 +67,23 @@ class CandidateListingUrl:
     status: str
     http_status: int | None
     failure_reason: str
+
+
+@dataclass(frozen=True)
+class ClassifiedListingPage:
+    niche: str
+    source_name: str
+    source_type: str
+    source_priority: int
+    canonical_url: str
+    listing_page_status: str
+    classification_reason: str
+    http_status: int | None
+    supporting_geography_slugs: tuple[str, ...]
+    supporting_geography_names: tuple[str, ...]
+    supporting_queries: tuple[str, ...]
+    raw_candidate_count: int
+    classified_at: str
 
 
 NEW_YORK_GEOGRAPHIES: tuple[GeographyTarget, ...] = (
@@ -310,6 +329,70 @@ def write_candidate_listing_urls(
     return path
 
 
+def classify_candidate_listing_urls(
+    config: PipelineConfig | None = None,
+    candidates: list[CandidateListingUrl] | None = None,
+) -> list[ClassifiedListingPage]:
+    runtime_config = config or PipelineConfig()
+    session = _build_session(runtime_config)
+    candidate_rows = candidates or collect_candidate_listing_urls(runtime_config)
+
+    grouped_candidates: dict[str, list[CandidateListingUrl]] = defaultdict(list)
+    for candidate in candidate_rows:
+        grouped_candidates[_canonicalize_url(candidate.candidate_url)].append(candidate)
+
+    classifications: list[ClassifiedListingPage] = []
+    for canonical_url, group in grouped_candidates.items():
+        representative = group[0]
+        response = _fetch_url(session, canonical_url, runtime_config)
+        listing_status, reason = _classify_listing_page(
+            niche=representative.niche,
+            url=canonical_url,
+            html=response["text"] if response["ok"] else "",
+            http_status=response["status_code"],
+        )
+        classifications.append(
+            ClassifiedListingPage(
+                niche=representative.niche,
+                source_name=representative.source_name,
+                source_type=representative.source_type,
+                source_priority=representative.source_priority,
+                canonical_url=canonical_url,
+                listing_page_status=listing_status,
+                classification_reason=reason,
+                http_status=response["status_code"],
+                supporting_geography_slugs=tuple(sorted({candidate.geography_slug for candidate in group})),
+                supporting_geography_names=tuple(sorted({candidate.geography_name for candidate in group})),
+                supporting_queries=tuple(sorted({candidate.discovery_query for candidate in group})),
+                raw_candidate_count=len(group),
+                classified_at=_timestamp_now(),
+            )
+        )
+
+    classifications.sort(key=lambda row: (row.niche, row.canonical_url))
+    return classifications
+
+
+def write_classified_listing_pages(
+    output_path: Path | None = None,
+    *,
+    config: PipelineConfig | None = None,
+) -> Path:
+    runtime_config = config or PipelineConfig()
+    path = output_path or runtime_config.classified_listing_pages_output_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    archive_dir = path.parent / "archive" / path.stem
+    archive_dir.mkdir(parents=True, exist_ok=True)
+
+    classified_rows = classify_candidate_listing_urls(runtime_config)
+    payload = json.dumps([asdict(row) for row in classified_rows], indent=2)
+    path.write_text(payload, encoding="utf-8")
+
+    timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    archive_dir.joinpath(f"{_snapshot_token(timestamp)}.json").write_text(payload, encoding="utf-8")
+    return path
+
+
 def _normalize_query(search_term: str, geography_term: str, source_hint: str) -> str:
     return " ".join((search_term, source_hint, geography_term))
 
@@ -443,6 +526,67 @@ def _extract_ids_region_url(homepage_html: str, *, state_code: str) -> str:
     return match.group("url")
 
 
+def _classify_listing_page(
+    *,
+    niche: str,
+    url: str,
+    html: str,
+    http_status: int | None,
+) -> tuple[str, str]:
+    if http_status is None or http_status >= 400:
+        return "rejected_fetch_failed", f"Unable to verify listing page content: HTTP {http_status or 'error'}."
+
+    soup = BeautifulSoup(html, "html.parser")
+    title = (soup.title.get_text(" ", strip=True) if soup.title else "").lower()
+    text = soup.get_text(" ", strip=True).lower()
+    path = urlparse(url).path.rstrip("/")
+
+    if niche == "property_manager":
+        if path.startswith("/location/ny") and "property managers" in text:
+            return "accepted_listing_page", "PropertyManagement NY location page contains property manager listing language."
+        return "rejected_irrelevant", "Property management candidate did not match the expected NY location listing pattern."
+
+    if niche == "interior_designer":
+        profile_links = _extract_ids_profile_links(soup)
+        if path.endswith("/mid-atlantic") and len(profile_links) >= 5:
+            return "accepted_listing_page", "IDS Mid-Atlantic region page exposes multiple designer profile links."
+        if "the ids list" in title and "designer" in text:
+            return "review_listing_page", "Page looks related to IDS designer discovery but did not meet the profile-link threshold."
+        return "rejected_irrelevant", "Interior designer candidate did not match the expected IDS region listing pattern."
+
+    return "rejected_irrelevant", "Unsupported discovery niche."
+
+
+def _extract_ids_profile_links(soup: BeautifulSoup) -> set[str]:
+    blocked_paths = {
+        "/",
+        "/designers",
+        "/designer",
+        "/search",
+        "/homeowner",
+        "/homeowner-2",
+        "/homeowner-blog",
+        "/featuredinteriors",
+        "/contact-ids",
+        "/request-help",
+        "/find-your-way",
+        "/find-your-style",
+    }
+    profile_links: set[str] = set()
+    for anchor in soup.select("a[href]"):
+        href = (anchor.get("href") or "").strip()
+        if not href.startswith("/"):
+            continue
+        if href in blocked_paths or href.startswith("/#"):
+            continue
+        if "?" in href or "#" in href:
+            continue
+        if href.count("/") != 1:
+            continue
+        profile_links.add(href)
+    return profile_links
+
+
 def _fetch_url(
     session: requests.Session,
     url: str,
@@ -519,11 +663,17 @@ def _timestamp_now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
+def _canonicalize_url(url: str) -> str:
+    parsed = urlparse(url)
+    normalized_path = parsed.path.rstrip("/") or "/"
+    return f"{parsed.scheme}://{parsed.netloc}{normalized_path}"
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Discovery utilities for the lead enrichment pipeline.")
     parser.add_argument(
         "command",
-        choices=("seeds", "candidates"),
+        choices=("seeds", "candidates", "classify"),
         nargs="?",
         default="seeds",
         help="Which discovery artifact to generate.",
@@ -533,6 +683,9 @@ if __name__ == "__main__":
     if args.command == "seeds":
         output_path = write_discovery_seeds()
         print(f"Wrote discovery seeds to {output_path}")
-    else:
+    elif args.command == "candidates":
         output_path = write_candidate_listing_urls()
         print(f"Wrote candidate listing URLs to {output_path}")
+    else:
+        output_path = write_classified_listing_pages()
+        print(f"Wrote classified listing pages to {output_path}")
