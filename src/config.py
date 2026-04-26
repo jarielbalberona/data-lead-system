@@ -14,6 +14,7 @@ DISCOVERY_SEEDS_OUTPUT_PATH = PROCESSED_DIR / "discovery_seeds.json"
 CLASSIFIED_LISTING_PAGES_OUTPUT_PATH = PROCESSED_DIR / "listing_pages_classified.json"
 SOURCE_REGISTRY_OUTPUT_PATH = PROCESSED_DIR / "source_registry.json"
 DISCOVERY_RAW_OUTPUT_PATH = RAW_DIR / "discovery_candidates_raw.json"
+WEBSITE_PAGE_ATTEMPTS_OUTPUT_PATH = RAW_DIR / "website_page_attempts_raw.json"
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 15
 DEFAULT_RETRY_ATTEMPTS = 1
 DEFAULT_CRAWL_DELAY_SECONDS = 1.0
@@ -44,6 +45,7 @@ class PipelineConfig:
     classified_listing_pages_output_path: Path = CLASSIFIED_LISTING_PAGES_OUTPUT_PATH
     source_registry_output_path: Path = SOURCE_REGISTRY_OUTPUT_PATH
     discovery_raw_output_path: Path = DISCOVERY_RAW_OUTPUT_PATH
+    website_page_attempts_output_path: Path = WEBSITE_PAGE_ATTEMPTS_OUTPUT_PATH
     request_timeout_seconds: int = DEFAULT_REQUEST_TIMEOUT_SECONDS
     retry_attempts: int = DEFAULT_RETRY_ATTEMPTS
     crawl_delay_seconds: float = DEFAULT_CRAWL_DELAY_SECONDS
