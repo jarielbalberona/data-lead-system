@@ -10,6 +10,7 @@ RAW_DIR = DATA_DIR / "raw"
 PROCESSED_DIR = DATA_DIR / "processed"
 FINAL_DIR = DATA_DIR / "final"
 DOCS_DIR = PROJECT_ROOT / "docs"
+DISCOVERY_SEEDS_OUTPUT_PATH = PROCESSED_DIR / "discovery_seeds.json"
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 20
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -38,6 +39,7 @@ class PipelineConfig:
     processed_dir: Path = PROCESSED_DIR
     final_dir: Path = FINAL_DIR
     docs_dir: Path = DOCS_DIR
+    discovery_seeds_output_path: Path = DISCOVERY_SEEDS_OUTPUT_PATH
     request_timeout_seconds: int = DEFAULT_REQUEST_TIMEOUT_SECONDS
     user_agent: str = DEFAULT_USER_AGENT
 
