@@ -18,6 +18,9 @@ from config import PipelineConfig
 LIKELY_CONTACT_PATHS: tuple[str, ...] = ("/", "/contact", "/contact-us", "/about", "/team")
 EMAIL_PATTERN = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.IGNORECASE)
 PHONE_PATTERN = re.compile(r"(?:\+?1[\s.-]*)?(?:\(?\d{3}\)?[\s.-]*)\d{3}[\s.-]*\d{4}")
+CONFIDENCE_RANK = {"high": 3, "medium": 2, "low": 1}
+METHOD_RANK = {"mailto_link": 3, "tel_link": 3, "visible_text": 2}
+PATH_RANK = {"/contact": 4, "/contact-us": 4, "/team": 2, "/about": 2, "/": 1}
 
 
 @dataclass(frozen=True)
@@ -120,6 +123,45 @@ def extract_website_contacts(
             )
 
     return _dedupe_contact_findings(findings)
+
+
+def apply_contact_enrichment(
+    records: list[dict[str, object]],
+    findings: list[WebsiteContactFinding],
+) -> list[dict[str, object]]:
+    findings_by_domain: dict[str, list[WebsiteContactFinding]] = {}
+    for finding in findings:
+        findings_by_domain.setdefault(finding.website_domain, []).append(finding)
+
+    enriched_records: list[dict[str, object]] = []
+    for record in records:
+        enriched = dict(record)
+        _, website_domain = _normalize_website(str(record.get("website", "")).strip())
+        domain_findings = findings_by_domain.get(website_domain, [])
+
+        listing_email = str(record.get("email", "")).strip().lower()
+        listing_phone = _normalize_phone(str(record.get("phone", "")).strip())
+        best_email = _best_finding(domain_findings, "email")
+        best_phone = _best_finding(domain_findings, "phone")
+
+        enriched["listing_email"] = listing_email
+        enriched["listing_phone"] = listing_phone
+        enriched["website_email"] = best_email.normalized_value if best_email else ""
+        enriched["website_phone"] = best_phone.normalized_value if best_phone else ""
+        enriched["email_source_url"] = best_email.page_url if best_email else ""
+        enriched["phone_source_url"] = best_phone.page_url if best_phone else ""
+        enriched["email_extraction_method"] = best_email.extraction_method if best_email else ""
+        enriched["phone_extraction_method"] = best_phone.extraction_method if best_phone else ""
+        enriched["email_confidence"] = best_email.confidence if best_email else ""
+        enriched["phone_confidence"] = best_phone.confidence if best_phone else ""
+        enriched["website_email_is_generic"] = bool(best_email.is_generic_email) if best_email else False
+        enriched["preferred_email"] = best_email.normalized_value if best_email else listing_email
+        enriched["preferred_phone"] = best_phone.normalized_value if best_phone else listing_phone
+        enriched["preferred_email_source"] = "website" if best_email else ("listing" if listing_email else "")
+        enriched["preferred_phone_source"] = "website" if best_phone else ("listing" if listing_phone else "")
+        enriched_records.append(enriched)
+
+    return enriched_records
 
 
 def write_candidate_pages(
@@ -408,13 +450,30 @@ def _is_generic_email(email: str) -> bool:
 
 def _dedupe_contact_findings(findings: list[WebsiteContactFinding]) -> list[WebsiteContactFinding]:
     deduped: dict[tuple[str, str, str, str], WebsiteContactFinding] = {}
-    confidence_rank = {"high": 3, "medium": 2, "low": 1}
     for finding in findings:
         key = (finding.website_domain, finding.page_url, finding.contact_type, finding.normalized_value)
         existing = deduped.get(key)
-        if existing is None or confidence_rank[finding.confidence] > confidence_rank[existing.confidence]:
+        if existing is None or CONFIDENCE_RANK[finding.confidence] > CONFIDENCE_RANK[existing.confidence]:
             deduped[key] = finding
     return list(deduped.values())
+
+
+def _best_finding(findings: list[WebsiteContactFinding], contact_type: str) -> WebsiteContactFinding | None:
+    candidates = [finding for finding in findings if finding.contact_type == contact_type]
+    if not candidates:
+        return None
+
+    return sorted(
+        candidates,
+        key=lambda finding: (
+            CONFIDENCE_RANK.get(finding.confidence, 0),
+            0 if finding.is_generic_email else 1,
+            METHOD_RANK.get(finding.extraction_method, 0),
+            PATH_RANK.get(finding.path_hint, 0),
+            finding.page_url,
+        ),
+        reverse=True,
+    )[0]
 
 
 def _timestamp_now() -> str:
