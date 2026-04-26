@@ -11,12 +11,11 @@ PROCESSED_DIR = DATA_DIR / "processed"
 FINAL_DIR = DATA_DIR / "final"
 DOCS_DIR = PROJECT_ROOT / "docs"
 DISCOVERY_SEEDS_OUTPUT_PATH = PROCESSED_DIR / "discovery_seeds.json"
-DEFAULT_REQUEST_TIMEOUT_SECONDS = 20
-DEFAULT_USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/124.0.0.0 Safari/537.36"
-)
+DISCOVERY_RAW_OUTPUT_PATH = RAW_DIR / "discovery_candidates_raw.json"
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 15
+DEFAULT_RETRY_ATTEMPTS = 1
+DEFAULT_CRAWL_DELAY_SECONDS = 1.0
+DEFAULT_USER_AGENT = "LeadExtractionAssignmentBot/2.0 (+terminal-based educational pipeline; contact: local-run)"
 
 PROPERTY_MANAGER_SOURCE_URLS = [
     "https://hoamanagementcompanies.net/illinois/hoa-management-companies-in-chicago-il",
@@ -40,7 +39,10 @@ class PipelineConfig:
     final_dir: Path = FINAL_DIR
     docs_dir: Path = DOCS_DIR
     discovery_seeds_output_path: Path = DISCOVERY_SEEDS_OUTPUT_PATH
+    discovery_raw_output_path: Path = DISCOVERY_RAW_OUTPUT_PATH
     request_timeout_seconds: int = DEFAULT_REQUEST_TIMEOUT_SECONDS
+    retry_attempts: int = DEFAULT_RETRY_ATTEMPTS
+    crawl_delay_seconds: float = DEFAULT_CRAWL_DELAY_SECONDS
     user_agent: str = DEFAULT_USER_AGENT
 
     def ensure_directories(self) -> None:

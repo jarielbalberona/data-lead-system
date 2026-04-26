@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import argparse
 import json
+import re
+import time
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
+import requests
 from config import PipelineConfig
 
 
@@ -33,6 +39,32 @@ class DiscoverySeed:
     source_hint: str
     query: str
     relevance_terms: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class DiscoveryRegistryEntry:
+    niche: str
+    source_name: str
+    source_type: str
+    source_priority: int
+    bootstrap_url: str
+
+
+@dataclass(frozen=True)
+class CandidateListingUrl:
+    niche: str
+    source_name: str
+    source_type: str
+    source_priority: int
+    discovery_query: str
+    geography_slug: str
+    geography_name: str
+    candidate_url: str
+    discovery_source_url: str
+    discovered_at: str
+    status: str
+    http_status: int | None
+    failure_reason: str
 
 
 NEW_YORK_GEOGRAPHIES: tuple[GeographyTarget, ...] = (
@@ -185,6 +217,25 @@ NICHE_DISCOVERY_PROFILES: tuple[NicheDiscoveryProfile, ...] = (
     ),
 )
 
+DISCOVERY_SOURCE_REGISTRY: tuple[DiscoveryRegistryEntry, ...] = (
+    DiscoveryRegistryEntry(
+        niche="property_manager",
+        source_name="propertymanagement.com",
+        source_type="local_business_directory",
+        source_priority=4,
+        bootstrap_url="https://propertymanagement.com/location/ny",
+    ),
+    DiscoveryRegistryEntry(
+        niche="interior_designer",
+        source_name="theidslist.com",
+        source_type="association_member_directory",
+        source_priority=2,
+        bootstrap_url="https://www.theidslist.com/",
+    ),
+)
+
+DISCOVERY_SEED_LOOKUP: dict[tuple[str, str, str], str] = {}
+
 
 def build_discovery_seeds() -> list[DiscoverySeed]:
     seeds: list[DiscoverySeed] = []
@@ -228,10 +279,260 @@ def write_discovery_seeds(
     return path
 
 
+def collect_candidate_listing_urls(config: PipelineConfig | None = None) -> list[CandidateListingUrl]:
+    runtime_config = config or PipelineConfig()
+    runtime_config.ensure_directories()
+    session = _build_session(runtime_config)
+
+    candidates: list[CandidateListingUrl] = []
+    candidates.extend(_collect_property_management_candidates(session, runtime_config))
+    candidates.extend(_collect_ids_candidates(session, runtime_config))
+    return candidates
+
+
+def write_candidate_listing_urls(
+    output_path: Path | None = None,
+    *,
+    config: PipelineConfig | None = None,
+) -> Path:
+    runtime_config = config or PipelineConfig()
+    path = output_path or runtime_config.discovery_raw_output_path
+    candidates = collect_candidate_listing_urls(runtime_config)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    archive_dir = path.parent / "archive" / path.stem
+    archive_dir.mkdir(parents=True, exist_ok=True)
+
+    payload = json.dumps([asdict(candidate) for candidate in candidates], indent=2)
+    path.write_text(payload, encoding="utf-8")
+
+    timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    archive_dir.joinpath(f"{_snapshot_token(timestamp)}.json").write_text(payload, encoding="utf-8")
+    return path
+
+
 def _normalize_query(search_term: str, geography_term: str, source_hint: str) -> str:
     return " ".join((search_term, source_hint, geography_term))
 
 
+def _build_session(config: PipelineConfig) -> requests.Session:
+    session = requests.Session()
+    session.headers.update(
+        {
+            "User-Agent": config.user_agent,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+    )
+    return session
+
+
+def _collect_property_management_candidates(
+    session: requests.Session,
+    config: PipelineConfig,
+) -> list[CandidateListingUrl]:
+    registry_entry = _registry_entry_for("property_manager")
+    candidates: list[CandidateListingUrl] = []
+
+    for geography in NEW_YORK_GEOGRAPHIES:
+        candidate_url = (
+            f"https://propertymanagement.com/location/ny/{_property_management_location_slug(geography)}"
+        )
+        response = _fetch_url(session, candidate_url, config)
+        candidates.append(
+            CandidateListingUrl(
+                niche="property_manager",
+                source_name=registry_entry.source_name,
+                source_type=registry_entry.source_type,
+                source_priority=registry_entry.source_priority,
+                discovery_query=_preferred_query("property_manager", geography.slug, "directory"),
+                geography_slug=geography.slug,
+                geography_name=geography.display_name,
+                candidate_url=candidate_url,
+                discovery_source_url=registry_entry.bootstrap_url,
+                discovered_at=_timestamp_now(),
+                status="discovered" if response["ok"] else "fetch_failed",
+                http_status=response["status_code"],
+                failure_reason=response["failure_reason"],
+            )
+        )
+
+    return candidates
+
+
+def _collect_ids_candidates(
+    session: requests.Session,
+    config: PipelineConfig,
+) -> list[CandidateListingUrl]:
+    registry_entry = _registry_entry_for("interior_designer")
+    homepage_result = _fetch_url(session, registry_entry.bootstrap_url, config)
+    homepage_html = homepage_result["text"] if homepage_result["ok"] else ""
+    ny_region_url = _extract_ids_region_url(homepage_html, state_code="NY")
+    candidates: list[CandidateListingUrl] = []
+
+    if not homepage_result["ok"]:
+        candidates.append(
+            CandidateListingUrl(
+                niche="interior_designer",
+                source_name=registry_entry.source_name,
+                source_type=registry_entry.source_type,
+                source_priority=registry_entry.source_priority,
+                discovery_query=_preferred_query("interior_designer", "new-york-city", "member directory"),
+                geography_slug="new-york-city",
+                geography_name="New York City",
+                candidate_url=registry_entry.bootstrap_url,
+                discovery_source_url=registry_entry.bootstrap_url,
+                discovered_at=_timestamp_now(),
+                status="fetch_failed",
+                http_status=homepage_result["status_code"],
+                failure_reason=homepage_result["failure_reason"],
+            )
+        )
+        return candidates
+
+    if ny_region_url:
+        region_result = _fetch_url(session, ny_region_url, config)
+        candidates.append(
+            CandidateListingUrl(
+                niche="interior_designer",
+                source_name=registry_entry.source_name,
+                source_type=registry_entry.source_type,
+                source_priority=registry_entry.source_priority,
+                discovery_query=_preferred_query("interior_designer", "new-york-city", "member directory"),
+                geography_slug="new-york-city",
+                geography_name="New York City",
+                candidate_url=ny_region_url,
+                discovery_source_url=registry_entry.bootstrap_url,
+                discovered_at=_timestamp_now(),
+                status="discovered" if region_result["ok"] else "fetch_failed",
+                http_status=region_result["status_code"],
+                failure_reason=region_result["failure_reason"],
+            )
+        )
+
+    for geography in NEW_YORK_GEOGRAPHIES:
+        if geography.slug == "new-york-city":
+            continue
+        candidates.append(
+            CandidateListingUrl(
+                niche="interior_designer",
+                source_name=registry_entry.source_name,
+                source_type=registry_entry.source_type,
+                source_priority=registry_entry.source_priority,
+                discovery_query=_preferred_query("interior_designer", geography.slug, "member directory"),
+                geography_slug=geography.slug,
+                geography_name=geography.display_name,
+                candidate_url=ny_region_url or registry_entry.bootstrap_url,
+                discovery_source_url=registry_entry.bootstrap_url,
+                discovered_at=_timestamp_now(),
+                status="discovered" if ny_region_url else "bootstrap_only",
+                http_status=homepage_result["status_code"],
+                failure_reason="" if ny_region_url else "NY region link not discovered from IDS homepage.",
+            )
+        )
+
+    return candidates
+
+
+def _extract_ids_region_url(homepage_html: str, *, state_code: str) -> str:
+    match = re.search(
+        rf"ivalue\['{re.escape(state_code)}'\]\s*=\s*'(?P<url>https://www\.theidslist\.com/[^']+)'",
+        homepage_html,
+    )
+    if not match:
+        return ""
+    return match.group("url")
+
+
+def _fetch_url(
+    session: requests.Session,
+    url: str,
+    config: PipelineConfig,
+) -> dict[str, object]:
+    last_status: int | None = None
+    last_failure = ""
+
+    for attempt in range(config.retry_attempts + 1):
+        if attempt > 0:
+            time.sleep(config.crawl_delay_seconds)
+
+        try:
+            response = session.get(url, timeout=config.request_timeout_seconds)
+            last_status = response.status_code
+            if 200 <= response.status_code < 400:
+                _sleep_for_rate_limit(url, config)
+                return {
+                    "ok": True,
+                    "status_code": response.status_code,
+                    "failure_reason": "",
+                    "text": response.text,
+                }
+            last_failure = f"HTTP {response.status_code}"
+        except requests.RequestException as exc:
+            last_failure = str(exc)
+
+    _sleep_for_rate_limit(url, config)
+    return {
+        "ok": False,
+        "status_code": last_status,
+        "failure_reason": last_failure,
+        "text": "",
+    }
+
+
+def _sleep_for_rate_limit(url: str, config: PipelineConfig) -> None:
+    # Assignment-grade crawl politeness: a fixed delay is enough here.
+    if urlparse(url).netloc:
+        time.sleep(config.crawl_delay_seconds)
+
+
+def _preferred_query(niche: str, geography_slug: str, source_hint: str) -> str:
+    if not DISCOVERY_SEED_LOOKUP:
+        for seed in build_discovery_seeds():
+            DISCOVERY_SEED_LOOKUP.setdefault((seed.niche, seed.geography_slug, seed.source_hint), seed.query)
+
+    key = (niche, geography_slug, source_hint)
+    if key not in DISCOVERY_SEED_LOOKUP:
+        raise ValueError(
+            f"Missing discovery seed for niche={niche}, geography={geography_slug}, source_hint={source_hint}"
+        )
+    return DISCOVERY_SEED_LOOKUP[key]
+
+
+def _property_management_location_slug(geography: GeographyTarget) -> str:
+    if geography.slug == "new-york-city":
+        return "new-york"
+    return geography.slug
+
+
+def _registry_entry_for(niche: str) -> DiscoveryRegistryEntry:
+    for entry in DISCOVERY_SOURCE_REGISTRY:
+        if entry.niche == niche:
+            return entry
+    raise ValueError(f"Missing source registry entry for niche: {niche}")
+
+
+def _snapshot_token(timestamp: str) -> str:
+    return timestamp.replace("-", "").replace(":", "").replace(".", "").replace("Z", "Z")
+
+
+def _timestamp_now() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
 if __name__ == "__main__":
-    output_path = write_discovery_seeds()
-    print(f"Wrote discovery seeds to {output_path}")
+    parser = argparse.ArgumentParser(description="Discovery utilities for the lead enrichment pipeline.")
+    parser.add_argument(
+        "command",
+        choices=("seeds", "candidates"),
+        nargs="?",
+        default="seeds",
+        help="Which discovery artifact to generate.",
+    )
+    args = parser.parse_args()
+
+    if args.command == "seeds":
+        output_path = write_discovery_seeds()
+        print(f"Wrote discovery seeds to {output_path}")
+    else:
+        output_path = write_candidate_listing_urls()
+        print(f"Wrote candidate listing URLs to {output_path}")
