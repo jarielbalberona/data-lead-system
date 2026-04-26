@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import time
@@ -45,6 +46,7 @@ class DiscoverySeed:
 
 @dataclass(frozen=True)
 class DiscoveryRegistryEntry:
+    source_registry_id: str
     niche: str
     source_name: str
     source_type: str
@@ -54,6 +56,8 @@ class DiscoveryRegistryEntry:
 
 @dataclass(frozen=True)
 class CandidateListingUrl:
+    source_registry_id: str
+    discovery_candidate_id: str
     niche: str
     source_name: str
     source_type: str
@@ -71,6 +75,8 @@ class CandidateListingUrl:
 
 @dataclass(frozen=True)
 class ClassifiedListingPage:
+    source_registry_id: str
+    listing_page_id: str
     niche: str
     source_name: str
     source_type: str
@@ -82,6 +88,7 @@ class ClassifiedListingPage:
     supporting_geography_slugs: tuple[str, ...]
     supporting_geography_names: tuple[str, ...]
     supporting_queries: tuple[str, ...]
+    supporting_candidate_ids: tuple[str, ...]
     raw_candidate_count: int
     classified_at: str
 
@@ -236,8 +243,16 @@ NICHE_DISCOVERY_PROFILES: tuple[NicheDiscoveryProfile, ...] = (
     ),
 )
 
+
+def _stable_token(value: str) -> str:
+    return hashlib.sha1(value.encode("utf-8")).hexdigest()[:12]
+
+
 DISCOVERY_SOURCE_REGISTRY: tuple[DiscoveryRegistryEntry, ...] = (
     DiscoveryRegistryEntry(
+        source_registry_id="source_registry_" + _stable_token(
+            "property_manager|propertymanagement.com|local_business_directory|4|https://propertymanagement.com/location/ny"
+        ),
         niche="property_manager",
         source_name="propertymanagement.com",
         source_type="local_business_directory",
@@ -245,6 +260,9 @@ DISCOVERY_SOURCE_REGISTRY: tuple[DiscoveryRegistryEntry, ...] = (
         bootstrap_url="https://propertymanagement.com/location/ny",
     ),
     DiscoveryRegistryEntry(
+        source_registry_id="source_registry_" + _stable_token(
+            "interior_designer|theidslist.com|association_member_directory|2|https://www.theidslist.com/"
+        ),
         niche="interior_designer",
         source_name="theidslist.com",
         source_type="association_member_directory",
@@ -353,6 +371,8 @@ def classify_candidate_listing_urls(
         )
         classifications.append(
             ClassifiedListingPage(
+                source_registry_id=representative.source_registry_id,
+                listing_page_id=_listing_page_id(representative.source_registry_id, canonical_url),
                 niche=representative.niche,
                 source_name=representative.source_name,
                 source_type=representative.source_type,
@@ -364,6 +384,7 @@ def classify_candidate_listing_urls(
                 supporting_geography_slugs=tuple(sorted({candidate.geography_slug for candidate in group})),
                 supporting_geography_names=tuple(sorted({candidate.geography_name for candidate in group})),
                 supporting_queries=tuple(sorted({candidate.discovery_query for candidate in group})),
+                supporting_candidate_ids=tuple(sorted({candidate.discovery_candidate_id for candidate in group})),
                 raw_candidate_count=len(group),
                 classified_at=_timestamp_now(),
             )
@@ -390,6 +411,19 @@ def write_classified_listing_pages(
 
     timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     archive_dir.joinpath(f"{_snapshot_token(timestamp)}.json").write_text(payload, encoding="utf-8")
+    return path
+
+
+def write_source_registry(
+    output_path: Path | None = None,
+    *,
+    config: PipelineConfig | None = None,
+) -> Path:
+    runtime_config = config or PipelineConfig()
+    path = output_path or runtime_config.source_registry_output_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps([asdict(entry) for entry in DISCOVERY_SOURCE_REGISTRY], indent=2)
+    path.write_text(payload, encoding="utf-8")
     return path
 
 
@@ -423,6 +457,10 @@ def _collect_property_management_candidates(
         response = _fetch_url(session, candidate_url, config)
         candidates.append(
             CandidateListingUrl(
+                source_registry_id=registry_entry.source_registry_id,
+                discovery_candidate_id=_candidate_id(
+                    registry_entry.source_registry_id, candidate_url, geography.slug, geography.display_name
+                ),
                 niche="property_manager",
                 source_name=registry_entry.source_name,
                 source_type=registry_entry.source_type,
@@ -455,6 +493,13 @@ def _collect_ids_candidates(
     if not homepage_result["ok"]:
         candidates.append(
             CandidateListingUrl(
+                source_registry_id=registry_entry.source_registry_id,
+                discovery_candidate_id=_candidate_id(
+                    registry_entry.source_registry_id,
+                    registry_entry.bootstrap_url,
+                    "new-york-city",
+                    "New York City",
+                ),
                 niche="interior_designer",
                 source_name=registry_entry.source_name,
                 source_type=registry_entry.source_type,
@@ -476,6 +521,13 @@ def _collect_ids_candidates(
         region_result = _fetch_url(session, ny_region_url, config)
         candidates.append(
             CandidateListingUrl(
+                source_registry_id=registry_entry.source_registry_id,
+                discovery_candidate_id=_candidate_id(
+                    registry_entry.source_registry_id,
+                    ny_region_url,
+                    "new-york-city",
+                    "New York City",
+                ),
                 niche="interior_designer",
                 source_name=registry_entry.source_name,
                 source_type=registry_entry.source_type,
@@ -497,6 +549,13 @@ def _collect_ids_candidates(
             continue
         candidates.append(
             CandidateListingUrl(
+                source_registry_id=registry_entry.source_registry_id,
+                discovery_candidate_id=_candidate_id(
+                    registry_entry.source_registry_id,
+                    ny_region_url or registry_entry.bootstrap_url,
+                    geography.slug,
+                    geography.display_name,
+                ),
                 niche="interior_designer",
                 source_name=registry_entry.source_name,
                 source_type=registry_entry.source_type,
@@ -669,11 +728,21 @@ def _canonicalize_url(url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}{normalized_path}"
 
 
+def _candidate_id(source_registry_id: str, candidate_url: str, geography_slug: str, geography_name: str) -> str:
+    return "discovery_candidate_" + _stable_token(
+        f"{source_registry_id}|{candidate_url}|{geography_slug}|{geography_name}"
+    )
+
+
+def _listing_page_id(source_registry_id: str, canonical_url: str) -> str:
+    return "listing_page_" + _stable_token(f"{source_registry_id}|{canonical_url}")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Discovery utilities for the lead enrichment pipeline.")
     parser.add_argument(
         "command",
-        choices=("seeds", "candidates", "classify"),
+        choices=("seeds", "candidates", "classify", "registry"),
         nargs="?",
         default="seeds",
         help="Which discovery artifact to generate.",
@@ -686,6 +755,9 @@ if __name__ == "__main__":
     elif args.command == "candidates":
         output_path = write_candidate_listing_urls()
         print(f"Wrote candidate listing URLs to {output_path}")
-    else:
+    elif args.command == "classify":
         output_path = write_classified_listing_pages()
         print(f"Wrote classified listing pages to {output_path}")
+    else:
+        output_path = write_source_registry()
+        print(f"Wrote source registry to {output_path}")

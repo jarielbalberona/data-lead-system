@@ -12,6 +12,7 @@ FINAL_DIR = DATA_DIR / "final"
 DOCS_DIR = PROJECT_ROOT / "docs"
 DISCOVERY_SEEDS_OUTPUT_PATH = PROCESSED_DIR / "discovery_seeds.json"
 CLASSIFIED_LISTING_PAGES_OUTPUT_PATH = PROCESSED_DIR / "listing_pages_classified.json"
+SOURCE_REGISTRY_OUTPUT_PATH = PROCESSED_DIR / "source_registry.json"
 DISCOVERY_RAW_OUTPUT_PATH = RAW_DIR / "discovery_candidates_raw.json"
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 15
 DEFAULT_RETRY_ATTEMPTS = 1
@@ -41,6 +42,7 @@ class PipelineConfig:
     docs_dir: Path = DOCS_DIR
     discovery_seeds_output_path: Path = DISCOVERY_SEEDS_OUTPUT_PATH
     classified_listing_pages_output_path: Path = CLASSIFIED_LISTING_PAGES_OUTPUT_PATH
+    source_registry_output_path: Path = SOURCE_REGISTRY_OUTPUT_PATH
     discovery_raw_output_path: Path = DISCOVERY_RAW_OUTPUT_PATH
     request_timeout_seconds: int = DEFAULT_REQUEST_TIMEOUT_SECONDS
     retry_attempts: int = DEFAULT_RETRY_ATTEMPTS
