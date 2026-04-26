@@ -15,6 +15,7 @@ CLASSIFIED_LISTING_PAGES_OUTPUT_PATH = PROCESSED_DIR / "listing_pages_classified
 SOURCE_REGISTRY_OUTPUT_PATH = PROCESSED_DIR / "source_registry.json"
 DISCOVERY_RAW_OUTPUT_PATH = RAW_DIR / "discovery_candidates_raw.json"
 WEBSITE_PAGE_ATTEMPTS_OUTPUT_PATH = RAW_DIR / "website_page_attempts_raw.json"
+WEBSITE_CONTACTS_OUTPUT_PATH = PROCESSED_DIR / "website_contacts.json"
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 15
 DEFAULT_RETRY_ATTEMPTS = 1
 DEFAULT_CRAWL_DELAY_SECONDS = 1.0
@@ -46,6 +47,7 @@ class PipelineConfig:
     source_registry_output_path: Path = SOURCE_REGISTRY_OUTPUT_PATH
     discovery_raw_output_path: Path = DISCOVERY_RAW_OUTPUT_PATH
     website_page_attempts_output_path: Path = WEBSITE_PAGE_ATTEMPTS_OUTPUT_PATH
+    website_contacts_output_path: Path = WEBSITE_CONTACTS_OUTPUT_PATH
     request_timeout_seconds: int = DEFAULT_REQUEST_TIMEOUT_SECONDS
     retry_attempts: int = DEFAULT_RETRY_ATTEMPTS
     crawl_delay_seconds: float = DEFAULT_CRAWL_DELAY_SECONDS
