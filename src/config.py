@@ -16,8 +16,8 @@ SOURCE_REGISTRY_OUTPUT_PATH = PROCESSED_DIR / "source_registry.json"
 DISCOVERY_RAW_OUTPUT_PATH = RAW_DIR / "discovery_candidates_raw.json"
 WEBSITE_PAGE_ATTEMPTS_OUTPUT_PATH = RAW_DIR / "website_page_attempts_raw.json"
 WEBSITE_CONTACTS_OUTPUT_PATH = PROCESSED_DIR / "website_contacts.json"
-DEFAULT_REQUEST_TIMEOUT_SECONDS = 15
-DEFAULT_RETRY_ATTEMPTS = 1
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 10
+DEFAULT_RETRY_ATTEMPTS = 0
 DEFAULT_CRAWL_DELAY_SECONDS = 1.0
 DEFAULT_USER_AGENT = "LeadExtractionAssignmentBot/2.0 (+terminal-based educational pipeline; contact: local-run)"
 

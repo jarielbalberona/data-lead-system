@@ -1,40 +1,93 @@
-# Lead Extraction & Identity Resolution Assignment
+# Lead Enrichment & Outreach-Ready Export
 
-Minimal Python pipeline for Part 1 of the hiring assignment.
+Python-first lead pipeline for the enrichment phase of the assignment.
 
 ## What This Project Does
 
-- extracts real public business leads for:
-  - property managers
-  - interior designers
-- normalizes contact and location fields
-- applies identity-resolution logic instead of naive row deletion
-- suppresses repeated outreach to the same reachable contact path
-- exports a clean assignment-ready CSV to `data/final/leads.csv`
+The runtime now follows this path:
 
-## Project Structure
+```txt
+directory/source discovery
+-> candidate listing URL collection
+-> listing-page classification
+-> accepted listing pages
+-> extracted candidate lead rows
+-> website enrichment and validation
+-> identity-aware grouping
+-> representative-row selection
+-> dual exports
+```
 
-- `data/raw/`
-  - latest raw extractor outputs
-  - timestamped raw snapshots under `data/raw/archive/`
-- `data/final/leads.csv`
-  - final cleaned export
-- `docs/schema.md`
-- `docs/identity-model.md`
-- `docs/source-selection.md`
-- `docs/process-explanation.md`
+This is still an assignment-grade terminal pipeline. It is not a service, scheduler, or CRM.
+
+## Why Directory Discovery Still Comes First
+
+The pipeline does not replace directory discovery with website-only extraction.
+
+- directory/category/search pages are better for finding candidate businesses
+- official business websites are better for enrichment and contact validation
+- outreach-ready export should choose the best row per outreach target after enrichment, not the first row that survived
+
+## Current Scope
+
+Target niches:
+
+- property managers
+- interior designers
+
+Target geography:
+
+- New York City
+- Brooklyn
+- Queens
+- Manhattan
+- Bronx
+- Staten Island
+- Yonkers
+- White Plains
+- New Rochelle
+- Mount Vernon
+- Long Island
+- Hempstead
+- Oyster Bay
+- Huntington
+- Brookhaven
+- Islip
+
+`New York` is treated as a broader geography target, not as Manhattan-only.
+
+## Sources
+
+Current discovery/extraction sources in the runtime:
+
+- property managers:
+  - discovery and extraction path through `hoamanagementcompanies.net`
+- interior designers:
+  - discovery and extraction path through `theidslist.com`
+
+Allowed source policy is documented in:
+
+- `docs/discovery-strategy.md`
+
+## Output Files
+
+Primary outputs:
+
+- `data/final/leads_master.csv`
+- `data/final/leads_outreach_ready.csv`
 - `docs/quality-summary.md`
-- `src/run_pipeline.py`
-  - pipeline entrypoint
 
-## Sources and Niches
+Supporting artifacts:
 
-Current public directory sources:
+- `data/raw/discovery_candidates_raw.json`
+- `data/processed/listing_pages_classified.json`
+- `data/processed/source_registry.json`
+- `data/raw/property_managers_raw.json`
+- `data/raw/interior_designers_raw.json`
+- `data/raw/website_page_attempts_raw.json`
+- `data/processed/website_contacts.json`
 
-- property managers: `hoamanagementcompanies.net`
-- interior designers: `interiordesignlink.com`
-
-The pipeline is intentionally narrow. It prefers a small number of stable public pages over broad brittle scraping.
+Timestamped snapshots are kept under the matching `archive/` folders.
 
 ## Install
 
@@ -44,79 +97,125 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Run the Pipeline
+## Run
 
 ```bash
 python3 src/run_pipeline.py
 ```
 
-## Output Locations
+The pipeline writes the latest master and outreach-ready CSVs into `data/final/`.
 
-- raw latest files:
-  - `data/raw/property_managers_raw.json`
-  - `data/raw/interior_designers_raw.json`
-- raw archive snapshots:
-  - `data/raw/archive/...`
-- final export:
-  - `data/final/leads.csv`
-- generated review summary:
-  - `docs/quality-summary.md`
+## Enrichment Model
 
-## How Dedupe and Outreach Suppression Work
+The pipeline preserves both listing-derived and website-derived evidence.
 
-This project treats dedupe as identity resolution.
+Examples:
 
-A row can represent:
+- `listing_email`
+- `listing_phone`
+- `website_email`
+- `website_phone`
+- `preferred_email`
+- `preferred_phone`
+- `website_validation_status`
 
-- a contact or inbox
+Website enrichment probes a constrained set of same-site pages:
+
+- `/`
+- `/contact`
+- `/contact-us`
+- `/about`
+- `/team`
+
+It extracts:
+
+- visible emails
+- `mailto:` emails
+- visible phones
+- `tel:` links
+
+It also records:
+
+- source URL
+- extraction method
+- confidence
+- validation outcome
+
+## Identity Resolution
+
+This project treats dedupe as identity resolution, not row deletion.
+
+A row may represent:
+
+- a contact/inbox
 - a business
 - a location
 - an outreach target
 
-The pipeline therefore keeps separate grouping fields:
+The pipeline therefore keeps:
 
 - `contact_group_id`
-  - shared normalized email or phone
 - `business_group_id`
-  - shared website domain or tightly supported repeated business identity
 - `location_group_id`
-  - conservative same-location grouping with supporting evidence
 - `outreach_suppression_key`
-  - priority order:
-    1. normalized email
-    2. normalized phone
-    3. website domain
-    4. normalized business-name signature + city
 
-The point is simple: preserve useful business/location rows without repeatedly contacting the same reachable target.
+Post-enrichment guardrail:
+
+- generic inboxes such as `info@` are useful for outreach
+- generic inbox alone is weak identity evidence
+- generic email no longer creates a global contact merge across unrelated website domains
+
+## Representative-Row Selection
+
+The outreach-ready export does not keep the first surviving row.
+
+It ranks rows within each outreach group using:
+
+1. website-derived email
+2. website-derived phone
+3. both preferred email and phone
+4. email confidence
+5. phone confidence
+6. source priority
+7. location completeness
+8. quality score
+9. niche relevance
+10. stable `lead_id` tie-break
+
+Selection evidence is carried with:
+
+- `representative_group_key`
+- `representative_rank_reason`
+
+## Outreach Readiness
+
+The outreach-ready export includes:
+
+- `ready_for_email`
+- `ready_for_phone`
+- `ready_for_outreach`
+- `outreach_block_reason`
+
+This keeps blocked rows explainable instead of silently dropping them.
 
 ## Known Limitations
 
-- Source coverage is only as good as the chosen public directory pages.
-- Public directories can contain stale listings or weak contact details.
-- Only a small number of rows expose public email addresses.
-- Address normalization is practical, not postal-grade.
-- Generic inboxes such as `info@` are still usable for suppression, but they are not perfect person-level identity proof.
-- This is a batch assignment pipeline, not an ongoing crawler or CRM.
+- Source coverage is still narrow and depends on stable public pages.
+- Some public directory records contain stale websites or stale phone numbers.
+- Website validation is intentionally conservative. Off-domain redirects are treated as mismatches; same-domain brand mismatch inference is not implemented.
+- Website enrichment only probes a small set of likely contact pages.
+- Some websites are dead, parked, or DNS-broken; those failures are recorded instead of hidden.
+- Discovery and extraction are still source-specific. This is not a universal extractor.
+- The pipeline is batch-oriented and file-based. It is not a long-running crawler or review queue.
 
-## Production Improvements
-
-If this were being turned into a real production system, the next sensible steps would be:
-
-- source monitoring and retry/reporting
-- stronger address/entity normalization
-- richer source diversity with source-specific parsers
-- explicit review queues for ambiguous duplicates
-- persistent run metadata and audit tables
-- tested enrichment layers for websites, categories, and contact discovery
-
-What it does not need for this assignment:
+## What This Project Deliberately Does Not Add
 
 - FastAPI
 - Celery
 - Postgres
 - Redis
+- Airflow
 - dashboards
 - auth
 
-That would be architecture theater for a five-day exercise.
+That would be architecture theater for this assignment.

@@ -515,15 +515,21 @@ def _extract_ids_profile(
     )
 
 
-def _accepted_listing_pages(config: PipelineConfig) -> list[ClassifiedListingPage]:
+def _accepted_listing_pages(
+    config: PipelineConfig,
+    classified_pages: list[ClassifiedListingPage] | None = None,
+) -> list[ClassifiedListingPage]:
     return [
         page
-        for page in classify_candidate_listing_urls(config=config)
+        for page in (classified_pages or classify_candidate_listing_urls(config=config))
         if page.listing_page_status == "accepted_listing_page"
     ]
 
 
-def extract_property_managers(config: PipelineConfig | None = None) -> list[dict[str, Any]]:
+def extract_property_managers(
+    config: PipelineConfig | None = None,
+    accepted_listing_pages: list[ClassifiedListingPage] | None = None,
+) -> list[dict[str, Any]]:
     active_config = config or PipelineConfig()
     active_config.ensure_directories()
     session = _build_session(active_config)
@@ -532,7 +538,7 @@ def extract_property_managers(config: PipelineConfig | None = None) -> list[dict
     extracted_records: list[RawLeadRecord] = []
     seen_company_urls: set[str] = set()
 
-    for listing_page in _accepted_listing_pages(active_config):
+    for listing_page in _accepted_listing_pages(active_config, accepted_listing_pages):
         if listing_page.niche != "property_manager" or listing_page.source_name != "hoamanagementcompanies.net":
             continue
 
@@ -560,7 +566,10 @@ def extract_property_managers(config: PipelineConfig | None = None) -> list[dict
     return [asdict(record) for record in extracted_records]
 
 
-def extract_interior_designers(config: PipelineConfig | None = None) -> list[dict[str, Any]]:
+def extract_interior_designers(
+    config: PipelineConfig | None = None,
+    accepted_listing_pages: list[ClassifiedListingPage] | None = None,
+) -> list[dict[str, Any]]:
     active_config = config or PipelineConfig()
     active_config.ensure_directories()
     session = _build_session(active_config)
@@ -569,7 +578,7 @@ def extract_interior_designers(config: PipelineConfig | None = None) -> list[dic
     extracted_records: list[RawLeadRecord] = []
     seen_profile_urls: set[str] = set()
 
-    for listing_page in _accepted_listing_pages(active_config):
+    for listing_page in _accepted_listing_pages(active_config, accepted_listing_pages):
         if listing_page.niche != "interior_designer" or listing_page.source_name != "theidslist.com":
             continue
 

@@ -94,23 +94,57 @@ def probe_websites(
         if not normalized_website or not website_domain:
             continue
 
+        fatal_domain_failure = ""
+        found_contact_types: set[str] = set()
         for path_hint in LIKELY_CONTACT_PATHS:
             requested_url = _build_probe_url(normalized_website, path_hint)
             if requested_url in seen_urls:
                 continue
             seen_urls.add(requested_url)
-            attempt, html = _fetch_attempt(session, requested_url, path_hint, website_domain, runtime_config)
-            attempts.append(attempt)
-            if html:
-                findings.extend(
-                    _extract_contact_findings(
+            if {"email", "phone"}.issubset(found_contact_types):
+                attempts.append(
+                    WebsitePageAttempt(
                         website=normalized_website,
                         website_domain=website_domain,
-                        page_url=attempt.final_url or requested_url,
                         path_hint=path_hint,
-                        html=html,
+                        requested_url=requested_url,
+                        final_url="",
+                        http_status=None,
+                        fetch_status="skipped_after_contact_completion",
+                        failure_reason="Skipped because both email and phone were already found for this website.",
+                        attempted_at=_timestamp_now(),
                     )
                 )
+                continue
+            if fatal_domain_failure:
+                attempts.append(
+                    WebsitePageAttempt(
+                        website=normalized_website,
+                        website_domain=website_domain,
+                        path_hint=path_hint,
+                        requested_url=requested_url,
+                        final_url="",
+                        http_status=None,
+                        fetch_status="skipped_after_domain_failure",
+                        failure_reason=fatal_domain_failure,
+                        attempted_at=_timestamp_now(),
+                    )
+                )
+                continue
+            attempt, html = _fetch_attempt(session, requested_url, path_hint, website_domain, runtime_config)
+            attempts.append(attempt)
+            if attempt.fetch_status == "fetch_failed" and _is_domain_unreachable(attempt.failure_reason):
+                fatal_domain_failure = attempt.failure_reason
+            if html:
+                page_findings = _extract_contact_findings(
+                    website=normalized_website,
+                    website_domain=website_domain,
+                    page_url=attempt.final_url or requested_url,
+                    path_hint=path_hint,
+                    html=html,
+                )
+                findings.extend(page_findings)
+                found_contact_types.update(finding.contact_type for finding in page_findings)
 
     return WebsiteProbeResult(attempts=attempts, findings=_dedupe_contact_findings(findings))
 
@@ -686,6 +720,19 @@ def _domains_match(left: str, right: str) -> bool:
     if not left or not right:
         return False
     return left == right or left.endswith(f".{right}") or right.endswith(f".{left}")
+
+
+def _is_domain_unreachable(failure_reason: str) -> bool:
+    normalized = failure_reason.lower()
+    return (
+        "failed to resolve" in normalized
+        or "nameresolutionerror" in normalized
+        or "nodename nor servname provided" in normalized
+        or "[errno 8]" in normalized
+        or "newconnectionerror" in normalized
+        or "connecttimeout" in normalized
+        or "read timed out" in normalized
+    )
 
 
 def _write_dataclass_payload(items: list[object], output_path: Path) -> None:

@@ -331,15 +331,16 @@ def write_candidate_listing_urls(
     output_path: Path | None = None,
     *,
     config: PipelineConfig | None = None,
+    candidates: list[CandidateListingUrl] | None = None,
 ) -> Path:
     runtime_config = config or PipelineConfig()
     path = output_path or runtime_config.discovery_raw_output_path
-    candidates = collect_candidate_listing_urls(runtime_config)
+    candidate_rows = candidates or collect_candidate_listing_urls(runtime_config)
     path.parent.mkdir(parents=True, exist_ok=True)
     archive_dir = path.parent / "archive" / path.stem
     archive_dir.mkdir(parents=True, exist_ok=True)
 
-    payload = json.dumps([asdict(candidate) for candidate in candidates], indent=2)
+    payload = json.dumps([asdict(candidate) for candidate in candidate_rows], indent=2)
     path.write_text(payload, encoding="utf-8")
 
     timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
@@ -398,6 +399,7 @@ def write_classified_listing_pages(
     output_path: Path | None = None,
     *,
     config: PipelineConfig | None = None,
+    classified_rows: list[ClassifiedListingPage] | None = None,
 ) -> Path:
     runtime_config = config or PipelineConfig()
     path = output_path or runtime_config.classified_listing_pages_output_path
@@ -405,8 +407,8 @@ def write_classified_listing_pages(
     archive_dir = path.parent / "archive" / path.stem
     archive_dir.mkdir(parents=True, exist_ok=True)
 
-    classified_rows = classify_candidate_listing_urls(runtime_config)
-    payload = json.dumps([asdict(row) for row in classified_rows], indent=2)
+    rows = classified_rows or classify_candidate_listing_urls(runtime_config)
+    payload = json.dumps([asdict(row) for row in rows], indent=2)
     path.write_text(payload, encoding="utf-8")
 
     timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
