@@ -85,7 +85,7 @@ pip install -r requirements.txt
 python3 app.py
 ```
 
-Open [http://127.0.0.1:5000](http://127.0.0.1:5000).
+Open [http://127.0.0.1:5000](http://127.0.0.1:5000). The home page lets you choose a niche and place, submit a real run, and view resulting artifacts in-browser.
 
 Optional: write run outputs to a custom base directory (same layout as on Render: `{DATA_ROOT}/final/...`):
 
@@ -109,8 +109,6 @@ This repo includes a [`render.yaml`](render.yaml) Blueprint for a single **Pytho
 **Local vs production:** locally, if `DATA_ROOT` is unset, the app uses the repo’s `data/` directory (`data/final/...`) as today. On Render, `DATA_ROOT` points at the attached disk. Shared pipeline paths under `data/raw` and `data/processed` in code also follow `DATA_ROOT` when set, so intermediate files on Render stay on the disk, not the ephemeral filesystem.
 
 **Limitations (unchanged):** the browser blocks on `/run` until the pipeline finishes; there is no job queue, worker, or request timeout offloading. Very long runs may hit HTTP proxy timeouts—addressing that would require async jobs or a worker (out of scope for this demo).
-
-The home page lets you choose a niche and place, submit a real run, and then view the resulting artifacts in-browser.
 
 ## Run the Pipeline Directly
 
