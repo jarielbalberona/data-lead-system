@@ -24,12 +24,11 @@
     </label>
     <label>
       <span>Place</span>
-      <input name="place" type="text" list="place-options" placeholder="New York" required>
-      <datalist id="place-options">
+      <select name="place" required>
         {% for place in place_examples %}
-        <option value="{{ place }}"></option>
+        <option value="{{ place }}"{% if loop.first %} selected{% endif %}>{{ place }}</option>
         {% endfor %}
-      </datalist>
+      </select>
     </label>
     <button type="submit" data-submit-button>Run pipeline</button>
   </form>
@@ -39,7 +38,7 @@
   </div>
   <div class="helper-copy">
     <p>Supported niches: property managers, interior designers.</p>
-    <p>Places are broad New York area buckets (New York, Long Island, Westchester). Borough or city names you type in are mapped to a bucket, not a precise boundary.</p>
+    <p>Places are U.S. states supported by the showcase (New York, California, Pennsylvania). Interior listings are regional directories, not state-exclusive, when the source does not offer a state-only page.</p>
   </div>
 </section>
 

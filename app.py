@@ -25,8 +25,8 @@ DOWNLOADABLE_FILENAMES = {
 }
 PLACE_EXAMPLES = [
     "New York",
-    "Long Island",
-    "Westchester",
+    "California",
+    "Pennsylvania",
 ]
 
 app = Flask(__name__, template_folder="web/templates", static_folder="web/static")

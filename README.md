@@ -37,13 +37,13 @@ Supported niches:
 - property managers
 - interior designers
 
-Supported New York **geography buckets** (broad, source-aligned, not a guarantee of a single city or borough):
+Supported **place** options in the showcase (state-level targets):
 
-- **New York** — NYC metro / five boroughs and the usual “New York / NYC / New York City” use cases (borought names you type, such as Brooklyn or Queens, are mapped into this bucket)
-- **Long Island** — Nassau / Suffolk and common Long Island place names, mapped to one bucket
-- **Westchester** — Westchester County and major cities in that bucket (e.g. Yonkers) map here
+- **New York** — HOA: state + optional NYC-metro subpages from the directory. Interior (theidslist.com): Mid-Atlantic regional listing (not NY-exclusive).
+- **California** — HOA: California state directory. Interior: West Coast regional listing (not California-exclusive).
+- **Pennsylvania** — HOA: Pennsylvania state directory. Interior: same Mid-Atlantic regional listing as New York (not Pennsylvania-exclusive).
 
-**Why buckets:** The discovery sites are regional directories and state pages, not a complete set of per-city sources. This model **improves hit rate and honest labeling** (fewer empty runs and less fake precision) instead of advertising borough-by-borough or city-by-city support we cannot actually back. Interior designer listings, in particular, are **region-based** (one regional listing page can serve a chosen bucket). Property manager city links are still walked when the HOA site provides them, but are tagged to these buckets, not to exact municipal boundaries.
+**Honesty:** Sources are mixed: some are full state pages (HOA), others are **regional** directories on the designer site. The goal is usable leads and clear labeling, not implied city- or state-line precision the sources do not provide.
 
 ## Sources
 

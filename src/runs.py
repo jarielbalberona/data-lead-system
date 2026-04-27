@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from config import FINAL_DIR, PROJECT_ROOT, PipelineConfig
-from discovery import NEW_YORK_GEOGRAPHIES
+from discovery import SHOWCASE_GEOGRAPHIES
 
 
 SUPPORTED_NICHES: dict[str, dict[str, object]] = {
@@ -41,29 +41,36 @@ SUPPORTED_NICHES: dict[str, dict[str, object]] = {
     },
 }
 
-# Map free-text and legacy city/borough slugs to the three broad, source-aligned bucket slugs.
+# Map free-text to showcase state slugs (see SHOWCASE_GEOGRAPHIES).
 PLACE_ALIASES = {
     "new-york-city": "new-york",
     "nyc": "new-york",
+    "ny": "new-york",
     "manhattan": "new-york",
     "brooklyn": "new-york",
     "queens": "new-york",
     "bronx": "new-york",
     "staten-island": "new-york",
-    "yonkers": "westchester",
-    "white-plains": "westchester",
-    "new-rochelle": "westchester",
-    "mount-vernon": "westchester",
-    "hempstead": "long-island",
-    "oyster-bay": "long-island",
-    "huntington": "long-island",
-    "brookhaven": "long-island",
-    "islip": "long-island",
-    "nassau": "long-island",
-    "suffolk": "long-island",
-    "nassau-county": "long-island",
-    "suffolk-county": "long-island",
-    "westchester-county": "westchester",
+    "long-island": "new-york",
+    "westchester": "new-york",
+    "hempstead": "new-york",
+    "oyster-bay": "new-york",
+    "huntington": "new-york",
+    "brookhaven": "new-york",
+    "islip": "new-york",
+    "nassau": "new-york",
+    "suffolk": "new-york",
+    "nassau-county": "new-york",
+    "suffolk-county": "new-york",
+    "yonkers": "new-york",
+    "white-plains": "new-york",
+    "new-rochelle": "new-york",
+    "mount-vernon": "new-york",
+    "westchester-county": "new-york",
+    "ca": "california",
+    "cali": "california",
+    "pa": "pennsylvania",
+    "penn": "pennsylvania",
 }
 
 
@@ -415,15 +422,14 @@ def _resolve_place(place_input: str) -> tuple[str, str]:
     normalized = slugify(place_input)
     normalized = PLACE_ALIASES.get(normalized, normalized)
 
-    for geography in NEW_YORK_GEOGRAPHIES:
+    for geography in SHOWCASE_GEOGRAPHIES:
         aliases = {slugify(term) for term in geography.discovery_terms} | {slugify(geography.display_name), geography.slug}
         if normalized in aliases:
             return geography.slug, geography.display_name
 
-    supported = ", ".join(geography.display_name for geography in NEW_YORK_GEOGRAPHIES)
+    supported = ", ".join(geography.display_name for geography in SHOWCASE_GEOGRAPHIES)
     raise ValueError(
-        f"Unsupported place '{place_input}'. This showcase uses broad New York area buckets: {supported} "
-        f"(city or borough names like Brooklyn or Queens are mapped to New York)."
+        f"Unsupported place '{place_input}'. Supported places: {supported}."
     )
 
 

@@ -93,12 +93,12 @@ class ClassifiedListingPage:
     classified_at: str
 
 
-NEW_YORK_GEOGRAPHIES: tuple[GeographyTarget, ...] = (
+SHOWCASE_GEOGRAPHIES: tuple[GeographyTarget, ...] = (
     GeographyTarget(
         slug="new-york",
         display_name="New York",
         state="NY",
-        discovery_terms=("New York", "New York City", "NYC", "New York NY"),
+        discovery_terms=("New York", "NYC", "New York State", "New York NY"),
         relevance_terms=(
             "New York",
             "New York City",
@@ -108,46 +108,45 @@ NEW_YORK_GEOGRAPHIES: tuple[GeographyTarget, ...] = (
             "Manhattan",
             "Bronx",
             "Staten Island",
-            "NY",
-        ),
-    ),
-    GeographyTarget(
-        slug="long-island",
-        display_name="Long Island",
-        state="NY",
-        discovery_terms=("Long Island", "Long Island NY", "Nassau County", "Suffolk County"),
-        relevance_terms=(
             "Long Island",
             "Nassau",
             "Suffolk",
-            "Hempstead",
-            "Oyster Bay",
-            "Huntington",
-            "Brookhaven",
-            "Islip",
-            "New York",
+            "Westchester",
             "NY",
         ),
     ),
     GeographyTarget(
-        slug="westchester",
-        display_name="Westchester",
-        state="NY",
-        discovery_terms=("Westchester", "Westchester County", "Westchester NY"),
+        slug="california",
+        display_name="California",
+        state="CA",
+        discovery_terms=("California", "CA", "California state"),
         relevance_terms=(
-            "Westchester",
-            "Yonkers",
-            "White Plains",
-            "New Rochelle",
-            "Mount Vernon",
-            "New York",
-            "NY",
+            "California",
+            "CA",
+            "Los Angeles",
+            "San Francisco",
+            "San Diego",
+            "Sacramento",
+            "Bay Area",
+        ),
+    ),
+    GeographyTarget(
+        slug="pennsylvania",
+        display_name="Pennsylvania",
+        state="PA",
+        discovery_terms=("Pennsylvania", "PA", "Pennsylvania state"),
+        relevance_terms=(
+            "Pennsylvania",
+            "PA",
+            "Philadelphia",
+            "Pittsburgh",
+            "Harrisburg",
         ),
     ),
 )
 
-# HOA state page links use city/area display names, not the bucket name. Map each bucket to
-# link labels we look for; all matches are tagged with the bucket (not borough- or city-level).
+# Per-state: NYC metro sub-area link labels on the HOA New York state page. All are tagged
+# geography_slug new-york (not borough- or city-level first-class slugs).
 HOA_CITY_LINK_LABELS: dict[str, tuple[str, ...]] = {
     "new-york": (
         "New York",
@@ -156,8 +155,6 @@ HOA_CITY_LINK_LABELS: dict[str, tuple[str, ...]] = {
         "Manhattan",
         "Bronx",
         "Staten Island",
-    ),
-    "long-island": (
         "Long Island",
         "Nassau",
         "Suffolk",
@@ -166,8 +163,6 @@ HOA_CITY_LINK_LABELS: dict[str, tuple[str, ...]] = {
         "Huntington",
         "Brookhaven",
         "Islip",
-    ),
-    "westchester": (
         "Westchester",
         "Yonkers",
         "White Plains",
@@ -176,9 +171,13 @@ HOA_CITY_LINK_LABELS: dict[str, tuple[str, ...]] = {
     ),
 }
 
-NY_BROAD_BUCKET_SLUGS: frozenset[str] = frozenset(g.slug for g in NEW_YORK_GEOGRAPHIES)
+SHOWCASE_GEO_SLUGS: frozenset[str] = frozenset(g.slug for g in SHOWCASE_GEOGRAPHIES)
 
-_GEOGRAPHY_BY_SLUG: dict[str, GeographyTarget] = {g.slug: g for g in NEW_YORK_GEOGRAPHIES}
+# Backwards compatibility for code that still imports the old name.
+NEW_YORK_GEOGRAPHIES: tuple[GeographyTarget, ...] = SHOWCASE_GEOGRAPHIES
+NY_BROAD_BUCKET_SLUGS: frozenset[str] = SHOWCASE_GEO_SLUGS
+
+_GEOGRAPHY_BY_SLUG: dict[str, GeographyTarget] = {g.slug: g for g in SHOWCASE_GEOGRAPHIES}
 
 
 def _geography_target_for_slug(slug: str) -> GeographyTarget:
@@ -434,102 +433,102 @@ def _collect_property_management_candidates(
         return []
 
     homepage_soup = BeautifulSoup(str(homepage_result["text"]), "html.parser")
-    state_page_url = _extract_hoa_state_page_url(homepage_soup, "new york", registry_entry.bootstrap_url)
-    if not state_page_url:
-        return []
-
-    state_page_result = _fetch_url(session, state_page_url, config)
+    # (geography slug, string used in HOA state index for link text/title)
+    hoa_state_index: tuple[tuple[str, str], ...] = (
+        ("new-york", "new york"),
+        ("california", "california"),
+        ("pennsylvania", "pennsylvania"),
+    )
     candidates: list[CandidateListingUrl] = []
 
-    candidates.append(
-        CandidateListingUrl(
-            source_registry_id=registry_entry.source_registry_id,
-            discovery_candidate_id=_candidate_id(
-                registry_entry.source_registry_id,
-                state_page_url,
-                "new-york",
-                "New York",
-            ),
-            niche="property_manager",
-            source_name=registry_entry.source_name,
-            source_type=registry_entry.source_type,
-            source_priority=registry_entry.source_priority,
-            discovery_query=_preferred_query("property_manager", "new-york", "directory"),
-            geography_slug="new-york",
-            geography_name="New York",
-            candidate_url=state_page_url,
-            discovery_source_url=registry_entry.bootstrap_url,
-            discovered_at=_timestamp_now(),
-            status="discovered" if state_page_result["ok"] else "fetch_failed",
-            http_status=state_page_result["status_code"],
-            failure_reason=state_page_result["failure_reason"],
+    for slug, hoa_state_name in hoa_state_index:
+        geography = _geography_target_for_slug(slug)
+        state_page_url = _extract_hoa_state_page_url(
+            homepage_soup, hoa_state_name, registry_entry.bootstrap_url
         )
-    )
+        if not state_page_url:
+            continue
 
-    if state_page_result["ok"]:
+        state_page_result = _fetch_url(session, state_page_url, config)
+        candidates.append(
+            CandidateListingUrl(
+                source_registry_id=registry_entry.source_registry_id,
+                discovery_candidate_id=_candidate_id(
+                    registry_entry.source_registry_id,
+                    state_page_url,
+                    slug,
+                    geography.display_name,
+                ),
+                niche="property_manager",
+                source_name=registry_entry.source_name,
+                source_type=registry_entry.source_type,
+                source_priority=registry_entry.source_priority,
+                discovery_query=_preferred_query("property_manager", slug, "directory"),
+                geography_slug=slug,
+                geography_name=geography.display_name,
+                candidate_url=state_page_url,
+                discovery_source_url=registry_entry.bootstrap_url,
+                discovered_at=_timestamp_now(),
+                status="discovered" if state_page_result["ok"] else "fetch_failed",
+                http_status=state_page_result["status_code"],
+                failure_reason=state_page_result["failure_reason"],
+            )
+        )
+
+        if slug != "new-york" or not state_page_result["ok"]:
+            continue
+
         state_soup = BeautifulSoup(str(state_page_result["text"]), "html.parser")
+        link_labels = HOA_CITY_LINK_LABELS.get("new-york", ())
         seen_city_urls: set[str] = set()
-        for bucket_slug, link_labels in HOA_CITY_LINK_LABELS.items():
-            geography = _geography_target_for_slug(bucket_slug)
-            for link_label in link_labels:
-                city_page_url = _extract_hoa_city_page_url(state_soup, link_label, state_page_url)
-                if not city_page_url:
-                    continue
-                url_key = _canonicalize_url(city_page_url)
-                if url_key in seen_city_urls:
-                    continue
-                seen_city_urls.add(url_key)
-                response = _fetch_url(session, city_page_url, config)
-                candidates.append(
-                    CandidateListingUrl(
-                        source_registry_id=registry_entry.source_registry_id,
-                        discovery_candidate_id=_candidate_id(
-                            registry_entry.source_registry_id, city_page_url, geography.slug, geography.display_name
-                        ),
-                        niche="property_manager",
-                        source_name=registry_entry.source_name,
-                        source_type=registry_entry.source_type,
-                        source_priority=registry_entry.source_priority,
-                        discovery_query=_preferred_query("property_manager", geography.slug, "directory"),
-                        geography_slug=geography.slug,
-                        geography_name=geography.display_name,
-                        candidate_url=city_page_url,
-                        discovery_source_url=state_page_url,
-                        discovered_at=_timestamp_now(),
-                        status="discovered" if response["ok"] else "fetch_failed",
-                        http_status=response["status_code"],
-                        failure_reason=response["failure_reason"],
-                    )
-                )
-
-        # New York state directory is statewide; if no city link was found for a bucket, the same
-        # state page is the honest broader fallback (not a local precision claim).
-        for slug, display in (("long-island", "Long Island"), ("westchester", "Westchester")):
-            if any(c.geography_slug == slug for c in candidates):
+        for link_label in link_labels:
+            city_page_url = _extract_hoa_city_page_url(state_soup, link_label, state_page_url)
+            if not city_page_url:
                 continue
+            url_key = _canonicalize_url(city_page_url)
+            if url_key in seen_city_urls:
+                continue
+            seen_city_urls.add(url_key)
+            response = _fetch_url(session, city_page_url, config)
             candidates.append(
                 CandidateListingUrl(
                     source_registry_id=registry_entry.source_registry_id,
                     discovery_candidate_id=_candidate_id(
-                        registry_entry.source_registry_id, state_page_url, slug, display
+                        registry_entry.source_registry_id, city_page_url, geography.slug, geography.display_name
                     ),
                     niche="property_manager",
                     source_name=registry_entry.source_name,
                     source_type=registry_entry.source_type,
                     source_priority=registry_entry.source_priority,
-                    discovery_query=_preferred_query("property_manager", slug, "directory"),
-                    geography_slug=slug,
-                    geography_name=display,
-                    candidate_url=state_page_url,
+                    discovery_query=_preferred_query("property_manager", geography.slug, "directory"),
+                    geography_slug=geography.slug,
+                    geography_name=geography.display_name,
+                    candidate_url=city_page_url,
                     discovery_source_url=state_page_url,
                     discovered_at=_timestamp_now(),
-                    status="discovered" if state_page_result["ok"] else "fetch_failed",
-                    http_status=state_page_result["status_code"],
-                    failure_reason=state_page_result["failure_reason"],
+                    status="discovered" if response["ok"] else "fetch_failed",
+                    http_status=response["status_code"],
+                    failure_reason=response["failure_reason"],
                 )
             )
 
     return candidates
+
+
+IDS_NY_REGION_FALLBACK_URL = "https://www.theidslist.com/mid-atlantic"
+IDS_CA_REGION_FALLBACK_URL = "https://www.theidslist.com/west-coast"
+# Pennsylvania uses the same regional listing as the Mid-Atlantic page (not a PA-only directory).
+IDS_PA_REGION_FALLBACK_URL = IDS_NY_REGION_FALLBACK_URL
+
+
+def _interior_listing_url_for_state(state: str, homepage_html: str) -> str:
+    if state == "NY":
+        return _extract_ids_region_url(homepage_html, state_code="NY")
+    if state == "CA":
+        return IDS_CA_REGION_FALLBACK_URL
+    if state == "PA":
+        return IDS_PA_REGION_FALLBACK_URL
+    return ""
 
 
 def _collect_ids_candidates(
@@ -539,11 +538,10 @@ def _collect_ids_candidates(
     registry_entry = _registry_entry_for("interior_designer")
     homepage_result = _fetch_url(session, registry_entry.bootstrap_url, config)
     homepage_html = homepage_result["text"] if homepage_result["ok"] else ""
-    ny_region_url = _extract_ids_region_url(homepage_html, state_code="NY")
     candidates: list[CandidateListingUrl] = []
 
     if not homepage_result["ok"]:
-        for geography in NEW_YORK_GEOGRAPHIES:
+        for geography in SHOWCASE_GEOGRAPHIES:
             candidates.append(
                 CandidateListingUrl(
                     source_registry_id=registry_entry.source_registry_id,
@@ -570,28 +568,51 @@ def _collect_ids_candidates(
             )
         return candidates
 
-    # The IDS "NY" link is a region-scale listing (not city- or county-specific). One URL backs all
-    # New York bucket choices; we emit one row per bucket so the pipeline can filter by slug
-    # without claiming borough- or local precision.
-    if ny_region_url:
-        region_result = _fetch_url(session, ny_region_url, config)
-        region_status = "discovered" if region_result["ok"] else "fetch_failed"
-        region_http = region_result["status_code"]
-        region_fail = region_result["failure_reason"]
-    else:
-        region_status = "bootstrap_only"
-        region_http = homepage_result["status_code"]
-        region_fail = "NY region link not discovered from IDS homepage."
+    response_cache: dict[str, dict[str, object]] = {}
 
-    for geography in NEW_YORK_GEOGRAPHIES:
+    for geography in SHOWCASE_GEOGRAPHIES:
+        region_url = _interior_listing_url_for_state(geography.state, homepage_html)
+        if not region_url:
+            candidates.append(
+                CandidateListingUrl(
+                    source_registry_id=registry_entry.source_registry_id,
+                    discovery_candidate_id=_candidate_id(
+                        registry_entry.source_registry_id,
+                        registry_entry.bootstrap_url,
+                        geography.slug,
+                        geography.display_name,
+                    ),
+                    niche="interior_designer",
+                    source_name=registry_entry.source_name,
+                    source_type=registry_entry.source_type,
+                    source_priority=registry_entry.source_priority,
+                    discovery_query=_preferred_query("interior_designer", geography.slug, "member directory"),
+                    geography_slug=geography.slug,
+                    geography_name=geography.display_name,
+                    candidate_url=registry_entry.bootstrap_url,
+                    discovery_source_url=registry_entry.bootstrap_url,
+                    discovered_at=_timestamp_now(),
+                    status="bootstrap_only",
+                    http_status=homepage_result["status_code"],
+                    failure_reason="No IDS regional URL for this state.",
+                )
+            )
+            continue
+
+        if region_url not in response_cache:
+            response_cache[region_url] = _fetch_url(session, region_url, config)
+        region_res = response_cache[region_url]
+        ok = bool(region_res.get("ok"))
+        region_status = "discovered" if ok else "fetch_failed"
+        region_http = region_res.get("status_code")
+        region_fail = "" if ok else str(region_res.get("failure_reason") or "")
+        http_status_val = region_http if isinstance(region_http, int) else None
+
         candidates.append(
             CandidateListingUrl(
                 source_registry_id=registry_entry.source_registry_id,
                 discovery_candidate_id=_candidate_id(
-                    registry_entry.source_registry_id,
-                    ny_region_url or registry_entry.bootstrap_url,
-                    geography.slug,
-                    geography.display_name,
+                    registry_entry.source_registry_id, region_url, geography.slug, geography.display_name
                 ),
                 niche="interior_designer",
                 source_name=registry_entry.source_name,
@@ -600,19 +621,16 @@ def _collect_ids_candidates(
                 discovery_query=_preferred_query("interior_designer", geography.slug, "member directory"),
                 geography_slug=geography.slug,
                 geography_name=geography.display_name,
-                candidate_url=ny_region_url or registry_entry.bootstrap_url,
+                candidate_url=region_url,
                 discovery_source_url=registry_entry.bootstrap_url,
                 discovered_at=_timestamp_now(),
-                status=region_status if ny_region_url else "bootstrap_only",
-                http_status=region_http,
-                failure_reason=region_fail if ny_region_url else "NY region link not discovered from IDS homepage.",
+                status=region_status,
+                http_status=http_status_val,
+                failure_reason=region_fail,
             )
         )
 
     return candidates
-
-
-IDS_NY_REGION_FALLBACK_URL = "https://www.theidslist.com/mid-atlantic"
 
 
 def _extract_ids_region_url(homepage_html: str, *, state_code: str) -> str:
@@ -663,10 +681,25 @@ def _classify_listing_page(
     path = urlparse(url).path.rstrip("/")
 
     if niche == "property_manager":
-        if "hoa management companies in new york" in title or "property management companies for hoa in new york by city" in text:
-            return "accepted_listing_page", "New York state directory page: regional coverage; city subpages (when found) are tagged to broader geography buckets, not as precise as five boroughs."
-        if "hoa management company" in text and "/new-york" in path:
-            return "accepted_listing_page", "HOA city or sub-area listing under New York: source-backed, bucket-tagged, not a guarantee of a single city."
+        if "hoa management companies in" in title and any(
+            s in title for s in ("new york", "california", "pennsylvania")
+        ):
+            return (
+                "accepted_listing_page",
+                "HOA state directory page: regional; not a guarantee of city- or county-level coverage.",
+            )
+        if "property management companies for hoa in new york by city" in text:
+            return (
+                "accepted_listing_page",
+                "New York HOA state page: regional; subpages (when present) are tagged to the New York geography choice.",
+            )
+        if "hoa management company" in text and any(
+            marker in path for marker in ("in-new-york", "in-california", "in-pennsylvania")
+        ):
+            return (
+                "accepted_listing_page",
+                "HOA state or sub-area listing: geography is the selected state bucket, not a municipal boundary.",
+            )
         if "hoa management company" in text and any(
             token in path
             for token in (
@@ -683,7 +716,7 @@ def _classify_listing_page(
                 "/white-plains",
             )
         ):
-            return "accepted_listing_page", "HOA sub-area listing page: bucket-level geographic targeting, not a promise of an exact city boundary from the source."
+            return "accepted_listing_page", "HOA sub-area listing (NYC metro source page): still tagged to the New York state choice, not a precise boundary."
         return "rejected_irrelevant", "Property management candidate did not match the expected HOA state/city listing pattern."
 
     if niche == "interior_designer":
@@ -691,7 +724,12 @@ def _classify_listing_page(
         if path.endswith("/mid-atlantic") and len(profile_links) >= 5:
             return (
                 "accepted_listing_page",
-                "IDS region listing (Mid-Atlantic / NY) — regional, not a city- or county-specific directory.",
+                "IDS Mid-Atlantic regional listing — not a single-state or city directory (used for New York and Pennsylvania runs).",
+            )
+        if path.endswith("/west-coast") and len(profile_links) >= 5:
+            return (
+                "accepted_listing_page",
+                "IDS West Coast regional listing — not a California-only directory.",
             )
         if "the ids list" in title and "designer" in text:
             return "review_listing_page", "Page looks related to IDS designer discovery but did not meet the profile-link threshold."

@@ -123,9 +123,9 @@ def _filtered_candidates(context: RunContext, candidates: list[object]) -> list[
     if matching:
         return matching
 
-    # Interior designer discovery is region-backed (one listing URL for all NY buckets). If the exact
-    # bucket row is missing from the candidate list, fall back to another NY bucket row that uses
-    # the same regional URL so we do not zero out on partial discovery.
+    # Interior designer discovery is region-backed (shared regional URLs across some states). If the
+    # exact geography row is missing, fall back to another showcase row that uses the same regional
+    # URL so we do not zero out on partial discovery.
     if niche == "interior_designer":
         regional = [
             c
@@ -141,7 +141,7 @@ def _filtered_candidates(context: RunContext, candidates: list[object]) -> list[
             for c in group:
                 if getattr(c, "geography_slug", "") == place:
                     return [c]
-        for slug in (place, "new-york"):
+        for slug in (place, "new-york", "pennsylvania", "california"):
             for c in regional:
                 if getattr(c, "geography_slug", "") == slug:
                     return [c]
@@ -175,7 +175,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--place",
         required=True,
-        help="Broad New York area bucket, for example 'New York', 'Long Island', or 'Westchester'.",
+        help="State place target, for example 'New York', 'California', or 'Pennsylvania'.",
     )
     parser.add_argument("--run-id", help="Optional explicit run id. Defaults to a UTC timestamp token.")
     parser.add_argument(

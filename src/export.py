@@ -64,6 +64,8 @@ OUTREACH_EXPORT_COLUMNS = [
 # names and common sub-area terms; source text may still be regional, not a precise address.
 TARGET_GEOGRAPHY_TERMS = [
     "New York",
+    "California",
+    "Pennsylvania",
     "NYC",
     "Long Island",
     "Westchester",
