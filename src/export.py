@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
+CONFIDENCE_RANK = {"high": 3, "medium": 2, "low": 1, "": 0}
 
 FINAL_EXPORT_COLUMNS = [
     "lead_id",
@@ -34,6 +35,8 @@ FINAL_EXPORT_COLUMNS = [
     "website_validation_reason",
     "website_final_url",
     "website_pages_attempted",
+    "representative_group_key",
+    "representative_rank_reason",
 ]
 
 
@@ -68,18 +71,172 @@ def _quality_score(row: pd.Series) -> int:
     return score
 
 
+def _ensure_column(dataframe: pd.DataFrame, column_name: str, default: object = "") -> None:
+    if column_name not in dataframe.columns:
+        dataframe[column_name] = default
+
+
+def _location_completeness_rank(row: pd.Series) -> int:
+    address = str(row.get("address", "")).strip()
+    city = str(row.get("city", "")).strip()
+    state = str(row.get("state", "")).strip()
+    supporting_geographies = str(row.get("supporting_geographies", "")).strip()
+
+    if address and city and state:
+        return 3
+    if city and state:
+        return 2
+    if supporting_geographies:
+        return 1
+    return 0
+
+
+def _representative_group_key(row: pd.Series) -> str:
+    contact_group_id = str(row.get("contact_group_id", "")).strip()
+    if contact_group_id:
+        return f"contact:{contact_group_id}"
+
+    outreach_suppression_key = str(row.get("outreach_suppression_key", "")).strip()
+    if outreach_suppression_key:
+        return f"suppression:{outreach_suppression_key}"
+
+    return f"lead:{str(row.get('lead_id', '')).strip()}"
+
+
+def _representative_rank_reason(row: pd.Series) -> str:
+    reasons: list[str] = []
+
+    if str(row.get("website_email", "")).strip():
+        reasons.append("website email")
+    if str(row.get("website_phone", "")).strip():
+        reasons.append("website phone")
+    if str(row.get("preferred_email", "")).strip() and str(row.get("preferred_phone", "")).strip():
+        reasons.append("email and phone")
+
+    email_confidence = str(row.get("email_confidence", "")).strip()
+    phone_confidence = str(row.get("phone_confidence", "")).strip()
+    if email_confidence:
+        reasons.append(f"email confidence {email_confidence}")
+    if phone_confidence:
+        reasons.append(f"phone confidence {phone_confidence}")
+
+    source_priority = str(row.get("source_priority", "")).strip()
+    if source_priority:
+        reasons.append(f"source priority {source_priority}")
+
+    location_rank = _location_completeness_rank(row)
+    if location_rank == 3:
+        reasons.append("full location context")
+    elif location_rank == 2:
+        reasons.append("city and state context")
+
+    if not reasons:
+        reasons.append("deterministic tie-break")
+
+    return "Selected for strongest outreach evidence: " + ", ".join(reasons) + "."
+
+
+def select_representative_rows(dataframe: pd.DataFrame) -> pd.DataFrame:
+    selected = dataframe.copy()
+    if selected.empty:
+        return selected
+
+    for column_name in [
+        "validation_status",
+        "contact_group_id",
+        "outreach_suppression_key",
+        "website_email",
+        "website_phone",
+        "preferred_email",
+        "preferred_phone",
+        "email_confidence",
+        "phone_confidence",
+        "source_priority",
+        "website_validation_status",
+        "dedupe_status",
+        "lead_id",
+        "quality_score",
+        "matches_target_niche",
+        "supporting_geographies",
+    ]:
+        _ensure_column(selected, column_name)
+
+    selected["lead_id"] = selected.apply(_build_lead_id, axis=1)
+    selected["quality_score"] = selected.apply(_quality_score, axis=1)
+    selected["representative_group_key"] = selected.apply(_representative_group_key, axis=1)
+    selected["location_completeness_rank"] = selected.apply(_location_completeness_rank, axis=1)
+    selected["website_email_present"] = selected["website_email"].astype(str).str.strip().astype(bool)
+    selected["website_phone_present"] = selected["website_phone"].astype(str).str.strip().astype(bool)
+    selected["preferred_email_present"] = selected["preferred_email"].astype(str).str.strip().astype(bool)
+    selected["preferred_phone_present"] = selected["preferred_phone"].astype(str).str.strip().astype(bool)
+    selected["has_both_preferred_contacts"] = (
+        selected["preferred_email_present"] & selected["preferred_phone_present"]
+    )
+    selected["email_confidence_rank"] = (
+        selected["email_confidence"].astype(str).str.strip().map(CONFIDENCE_RANK).fillna(0).astype(int)
+    )
+    selected["phone_confidence_rank"] = (
+        selected["phone_confidence"].astype(str).str.strip().map(CONFIDENCE_RANK).fillna(0).astype(int)
+    )
+    selected["source_priority_rank"] = pd.to_numeric(selected["source_priority"], errors="coerce").fillna(99).astype(int)
+    selected["niche_relevance_rank"] = selected["matches_target_niche"].astype(bool).astype(int)
+
+    eligible = selected[
+        (selected["validation_status"] == "valid")
+        & (selected["dedupe_status"] != "confirmed_duplicate")
+        & ~(
+            (selected["website_validation_status"] == "mismatch")
+            & ~selected["preferred_email_present"]
+            & ~selected["preferred_phone_present"]
+        )
+    ].copy()
+
+    if eligible.empty:
+        return eligible
+
+    eligible = eligible.sort_values(
+        by=[
+            "representative_group_key",
+            "website_email_present",
+            "website_phone_present",
+            "has_both_preferred_contacts",
+            "email_confidence_rank",
+            "phone_confidence_rank",
+            "source_priority_rank",
+            "location_completeness_rank",
+            "quality_score",
+            "niche_relevance_rank",
+            "lead_id",
+        ],
+        ascending=[True, False, False, False, False, False, True, False, False, False, True],
+        kind="stable",
+    )
+
+    selected_rows = eligible.groupby("representative_group_key", sort=False, as_index=False).head(1).copy()
+    selected_rows["representative_rank_reason"] = selected_rows.apply(_representative_rank_reason, axis=1)
+    return selected_rows.drop(
+        columns=[
+            "location_completeness_rank",
+            "website_email_present",
+            "website_phone_present",
+            "preferred_email_present",
+            "preferred_phone_present",
+            "has_both_preferred_contacts",
+            "email_confidence_rank",
+            "phone_confidence_rank",
+            "source_priority_rank",
+            "niche_relevance_rank",
+        ],
+        errors="ignore",
+    )
+
+
 def prepare_final_export(dataframe: pd.DataFrame) -> pd.DataFrame:
     prepared = dataframe.copy()
     if prepared.empty:
         return prepared
 
-    prepared = prepared[
-        (prepared["validation_status"] == "valid")
-        & (prepared["dedupe_status"] != "confirmed_duplicate")
-    ].copy()
-
-    prepared["lead_id"] = prepared.apply(_build_lead_id, axis=1)
-    prepared["quality_score"] = prepared.apply(_quality_score, axis=1)
+    prepared = select_representative_rows(prepared)
 
     prepared = prepared.sort_values(
         by=["niche", "quality_score", "business_name", "city"],
