@@ -1,13 +1,14 @@
 # Lead Enrichment & Outreach-Ready Export
 
-Python-first lead pipeline for the enrichment phase of the assignment.
+Python-first lead pipeline with a thin Flask showcase UI layered on top of the existing extraction and enrichment runtime.
 
 ## What This Project Does
 
-The runtime now follows this path:
+The canonical flow is:
 
 ```txt
-directory/source discovery
+user input
+-> directory/source discovery
 -> candidate listing URL collection
 -> listing-page classification
 -> accepted listing pages
@@ -16,13 +17,14 @@ directory/source discovery
 -> identity-aware grouping
 -> representative-row selection
 -> dual exports
+-> saved run artifacts
 ```
 
-This is still an assignment-grade terminal pipeline. It is not a service, scheduler, or CRM.
+This is still assignment-grade software. The UI is a demo shell, not a platform rewrite.
 
 ## Why Directory Discovery Still Comes First
 
-The pipeline does not replace directory discovery with website-only extraction.
+The runtime does not replace directory discovery with website-only extraction.
 
 - directory/category/search pages are better for finding candidate businesses
 - official business websites are better for enrichment and contact validation
@@ -30,12 +32,12 @@ The pipeline does not replace directory discovery with website-only extraction.
 
 ## Current Scope
 
-Target niches:
+Supported niches:
 
 - property managers
 - interior designers
 
-Target geography:
+Supported New York geography targets:
 
 - New York City
 - Brooklyn
@@ -54,7 +56,7 @@ Target geography:
 - Brookhaven
 - Islip
 
-`New York` is treated as a broader geography target, not as Manhattan-only.
+`New York` is treated as a broader NYC target, not as Manhattan-only.
 
 ## Sources
 
@@ -69,26 +71,6 @@ Allowed source policy is documented in:
 
 - `docs/discovery-strategy.md`
 
-## Output Files
-
-Primary outputs:
-
-- `data/final/leads_master.csv`
-- `data/final/leads_outreach_ready.csv`
-- `docs/quality-summary.md`
-
-Supporting artifacts:
-
-- `data/raw/discovery_candidates_raw.json`
-- `data/processed/listing_pages_classified.json`
-- `data/processed/source_registry.json`
-- `data/raw/property_managers_raw.json`
-- `data/raw/interior_designers_raw.json`
-- `data/raw/website_page_attempts_raw.json`
-- `data/processed/website_contacts.json`
-
-Timestamped snapshots are kept under the matching `archive/` folders.
-
 ## Install
 
 ```bash
@@ -97,13 +79,102 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Run
+## Run the Showcase UI
 
 ```bash
-python3 src/run_pipeline.py
+python3 app.py
 ```
 
-The pipeline writes the latest master and outreach-ready CSVs into `data/final/`.
+Open [http://127.0.0.1:5000](http://127.0.0.1:5000).
+
+Optional: write run outputs to a custom base directory (same layout as on Render: `{DATA_ROOT}/final/...`):
+
+```bash
+DATA_ROOT=/tmp/lead-data python3 app.py
+```
+
+## Deploy on Render (Blueprint)
+
+This repo includes a [`render.yaml`](render.yaml) Blueprint for a single **Python web service** with a **persistent disk**. Render only attaches disks to **paid** instance types, so use at least a starter (or higher) plan when creating the service.
+
+1. In the [Render Dashboard](https://dashboard.render.com), create a **New Blueprint** and connect this repository.
+2. Render reads `render.yaml` from the repo root and provisions the `lead-system-demo` web service.
+3. **Build:** `pip install -r requirements.txt`  
+4. **Start:** `gunicorn app:app --bind 0.0.0.0:$PORT`  
+5. **Health check:** `GET /healthz` (plain 200)  
+6. **Disk:** mounted at `/var/data`; **`DATA_ROOT=/var/data`** so run artifacts survive redeploys and restarts.
+
+**Where outputs live on Render:** under `/var/data/final/{niche_slug}/{place_slug}/{run_id}/` (for example `/var/data/final/property-managers/new-york-city/2026-04-27t173500z/`).
+
+**Local vs production:** locally, if `DATA_ROOT` is unset, the app uses the repo’s `data/` directory (`data/final/...`) as today. On Render, `DATA_ROOT` points at the attached disk. Shared pipeline paths under `data/raw` and `data/processed` in code also follow `DATA_ROOT` when set, so intermediate files on Render stay on the disk, not the ephemeral filesystem.
+
+**Limitations (unchanged):** the browser blocks on `/run` until the pipeline finishes; there is no job queue, worker, or request timeout offloading. Very long runs may hit HTTP proxy timeouts—addressing that would require async jobs or a worker (out of scope for this demo).
+
+The home page lets you choose a niche and place, submit a real run, and then view the resulting artifacts in-browser.
+
+## Run the Pipeline Directly
+
+```bash
+python3 src/run_pipeline.py --niche "property managers" --place "New York City"
+```
+
+Optional arguments:
+
+- `--run-id`
+- `--output-dir`
+
+## Run Output Layout
+
+Every run is isolated under:
+
+```txt
+{DATA_ROOT or repo data}/final/{niche_slug}/{place_slug}/{run_id}/
+```
+
+Locally (default), `{DATA_ROOT}` is the `data/` folder next to the repo, so paths look like `data/final/...`. With `DATA_ROOT` set, the same structure is rooted there (for example `DATA_ROOT=/var/data` on Render → `/var/data/final/...`).
+
+Example:
+
+```txt
+data/final/property-managers/new-york-city/2026-04-27t173500z/
+```
+
+Each run folder contains at least:
+
+- `leads_master.csv`
+- `leads_outreach_ready.csv`
+- `run_metadata.json`
+- `quality_summary.md`
+- `raw/`
+- `processed/`
+
+This replaces the old shared final-output model. The showcase UI depends on per-run isolation.
+
+## Route Structure
+
+Primary routes:
+
+- `/` — home
+- `/healthz` — load balancer health (200, plain `ok` body)
+- `/runs` — list runs
+- `/results/{niche}/{place}/{run_id}` — run overview
+- `/results/{niche}/{place}/{run_id}/master` — master CSV preview
+- `/results/{niche}/{place}/{run_id}/outreach-ready` — outreach preview
+- `/download/{niche}/{place}/{run_id}/{filename}` — download artifact
+
+## Master vs Outreach-Ready
+
+Master dataset:
+
+- preserves all useful rows that survived validation and conservative dedupe
+- keeps listing-derived and website-derived evidence
+- keeps lineage and traceability fields
+
+Outreach-ready dataset:
+
+- emits one best representative row per outreach/contact group
+- uses transparent ranking instead of “first surviving row”
+- includes readiness flags and block reasons
 
 ## Enrichment Model
 
@@ -159,11 +230,11 @@ The pipeline therefore keeps:
 - `location_group_id`
 - `outreach_suppression_key`
 
-Post-enrichment guardrail:
+Post-enrichment guardrails:
 
-- generic inboxes such as `info@` are useful for outreach
-- generic inbox alone is weak identity evidence
-- generic email no longer creates a global contact merge across unrelated website domains
+- generic inboxes such as `info@` stay outreach-eligible
+- generic inbox alone is still weak identity evidence
+- generic email does not create a global merge across unrelated domains
 
 ## Representative-Row Selection
 
@@ -200,13 +271,14 @@ This keeps blocked rows explainable instead of silently dropping them.
 
 ## Known Limitations
 
+- The UI runs the pipeline synchronously. Long runs will hold the browser request open until the run completes.
+- The UI is a showcase shell. There is no auth, queue, worker pool, or multi-user isolation.
 - Source coverage is still narrow and depends on stable public pages.
 - Some public directory records contain stale websites or stale phone numbers.
 - Website validation is intentionally conservative. Off-domain redirects are treated as mismatches; same-domain brand mismatch inference is not implemented.
 - Website enrichment only probes a small set of likely contact pages.
 - Some websites are dead, parked, or DNS-broken; those failures are recorded instead of hidden.
 - Discovery and extraction are still source-specific. This is not a universal extractor.
-- The pipeline is batch-oriented and file-based. It is not a long-running crawler or review queue.
 
 ## What This Project Deliberately Does Not Add
 

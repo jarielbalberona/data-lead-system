@@ -521,7 +521,9 @@ def _accepted_listing_pages(
 ) -> list[ClassifiedListingPage]:
     return [
         page
-        for page in (classified_pages or classify_candidate_listing_urls(config=config))
+        for page in (
+            classified_pages if classified_pages is not None else classify_candidate_listing_urls(config=config)
+        )
         if page.listing_page_status == "accepted_listing_page"
     ]
 

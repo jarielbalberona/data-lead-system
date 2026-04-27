@@ -335,7 +335,7 @@ def write_candidate_listing_urls(
 ) -> Path:
     runtime_config = config or PipelineConfig()
     path = output_path or runtime_config.discovery_raw_output_path
-    candidate_rows = candidates or collect_candidate_listing_urls(runtime_config)
+    candidate_rows = candidates if candidates is not None else collect_candidate_listing_urls(runtime_config)
     path.parent.mkdir(parents=True, exist_ok=True)
     archive_dir = path.parent / "archive" / path.stem
     archive_dir.mkdir(parents=True, exist_ok=True)
@@ -354,7 +354,7 @@ def classify_candidate_listing_urls(
 ) -> list[ClassifiedListingPage]:
     runtime_config = config or PipelineConfig()
     session = _build_session(runtime_config)
-    candidate_rows = candidates or collect_candidate_listing_urls(runtime_config)
+    candidate_rows = candidates if candidates is not None else collect_candidate_listing_urls(runtime_config)
 
     grouped_candidates: dict[str, list[CandidateListingUrl]] = defaultdict(list)
     for candidate in candidate_rows:

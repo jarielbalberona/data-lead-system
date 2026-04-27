@@ -193,6 +193,52 @@ def load_run_metadata(metadata_path: Path) -> dict[str, Any]:
     return json.loads(metadata_path.read_text(encoding="utf-8"))
 
 
+def resolve_run_dir(
+    niche_slug: str,
+    place_slug: str,
+    run_id: str,
+    *,
+    final_root: Path = FINAL_DIR,
+) -> Path:
+    return final_root / slugify(niche_slug) / slugify(place_slug) / run_id
+
+
+def list_run_metadata(
+    *,
+    niche_slug: str | None = None,
+    place_slug: str | None = None,
+    limit: int | None = None,
+    final_root: Path = FINAL_DIR,
+) -> list[dict[str, Any]]:
+    path_parts = [final_root]
+    if niche_slug:
+        path_parts.append(Path(slugify(niche_slug)))
+    if place_slug:
+        path_parts.append(Path(slugify(place_slug)))
+
+    root = Path(*path_parts)
+    if not root.exists():
+        return []
+
+    metadata_rows: list[dict[str, Any]] = []
+    for metadata_path in root.glob("**/run_metadata.json"):
+        try:
+            metadata = load_run_metadata(metadata_path)
+        except (OSError, json.JSONDecodeError):
+            continue
+        metadata["_metadata_path"] = _relative_path(metadata_path, PROJECT_ROOT)
+        metadata_rows.append(metadata)
+
+    metadata_rows.sort(
+        key=lambda row: str(row.get("started_at") or row.get("run_id") or ""),
+        reverse=True,
+    )
+
+    if limit is not None:
+        return metadata_rows[:limit]
+    return metadata_rows
+
+
 def _resolve_niche(niche_input: str) -> tuple[str, str, str]:
     normalized = slugify(niche_input)
     for niche_key, metadata in SUPPORTED_NICHES.items():

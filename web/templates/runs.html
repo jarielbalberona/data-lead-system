@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Runs | Lead Pipeline Showcase{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <h1>Recorded runs</h1>
+  {% if niche or place %}
+  <p class="lede">Filtered view{% if niche %} · niche: {{ niche }}{% endif %}{% if place %} · place: {{ place }}{% endif %}</p>
+  {% endif %}
+
+  {% if runs %}
+  <div class="runs-list">
+    {% for run in runs %}
+    <a class="run-card" href="{{ url_for('results', niche=run.niche_slug, place=run.place_slug, run_id=run.run_id) }}">
+      <strong>{{ run.niche_display_name }}</strong>
+      <span>{{ run.place_display_name }}</span>
+      <span>{{ run.run_id }}</span>
+      <span class="status {{ run.status }}">{{ run.status }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty-state">No runs found for this filter.</p>
+  {% endif %}
+</section>
+{% endblock %}

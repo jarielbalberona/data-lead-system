@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}{{ metadata.run_id }} | Lead Pipeline Showcase{% endblock %}
+
+{% block content %}
+<section class="panel result-header">
+  <div>
+    <h1>{{ metadata.niche_display_name }} in {{ metadata.place_display_name }}</h1>
+    <p class="lede">{{ metadata.run_id }}</p>
+  </div>
+  <div class="status-block">
+    <span class="status {{ metadata.status }}">{{ metadata.status }}</span>
+    <div class="timestamps">
+      <div><strong>Started:</strong> {{ metadata.started_at }}</div>
+      <div><strong>Finished:</strong> {{ metadata.finished_at or "still running" }}</div>
+    </div>
+  </div>
+</section>
+
+<section class="panel metrics-grid">
+  {% for key, value in metadata.key_counts.items() %}
+  <div class="metric">
+    <span class="metric-label">{{ key.replace('_', ' ') }}</span>
+    <strong>{{ value }}</strong>
+  </div>
+  {% endfor %}
+</section>
+
+{% if metadata.error_summary %}
+<section class="panel error-panel">
+  <h2>Run error</h2>
+  <pre>{{ metadata.error_summary }}</pre>
+</section>
+{% endif %}
+
+<section class="panel links-panel">
+  <h2>Artifacts</h2>
+  <div class="link-row">
+    <a href="{{ url_for('download_artifact', niche=metadata.niche_slug, place=metadata.place_slug, run_id=metadata.run_id, filename='leads_master.csv') }}">Download master CSV</a>
+    <a href="{{ url_for('download_artifact', niche=metadata.niche_slug, place=metadata.place_slug, run_id=metadata.run_id, filename='leads_outreach_ready.csv') }}">Download outreach-ready CSV</a>
+    <a href="{{ url_for('download_artifact', niche=metadata.niche_slug, place=metadata.place_slug, run_id=metadata.run_id, filename='run_metadata.json') }}">Download run metadata</a>
+    <a href="{{ url_for('download_artifact', niche=metadata.niche_slug, place=metadata.place_slug, run_id=metadata.run_id, filename='quality_summary.md') }}">Download quality summary</a>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="section-heading">
+    <h2>Master dataset</h2>
+    <a href="{{ url_for('results_master', niche=metadata.niche_slug, place=metadata.place_slug, run_id=metadata.run_id) }}">Open dedicated view</a>
+  </div>
+  <p class="dataset-note">Master preserves all useful rows and evidence that survived validation and conservative dedupe.</p>
+  {% include "table_preview.html" with context %}
+</section>
+
+<section class="panel">
+  <div class="section-heading">
+    <h2>Outreach-ready dataset</h2>
+    <a href="{{ url_for('results_outreach_ready', niche=metadata.niche_slug, place=metadata.place_slug, run_id=metadata.run_id) }}">Open dedicated view</a>
+  </div>
+  <p class="dataset-note">Outreach-ready selects one best representative row per outreach/contact group.</p>
+  {% set preview = outreach_preview %}
+  {% include "table_preview.html" %}
+</section>
+
+{% if quality_summary %}
+<section class="panel">
+  <h2>Quality summary</h2>
+  <pre class="summary-box">{{ quality_summary }}</pre>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} | Lead Pipeline Showcase{% endblock %}
+
+{% block content %}
+<section class="panel error-panel">
+  <h1>{{ title }}</h1>
+  <p>{{ message }}</p>
+  <a href="{{ url_for('index') }}">Back to run form</a>
+</section>
+{% endblock %}

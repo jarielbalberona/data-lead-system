@@ -1,11 +1,22 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
+
+
+def get_data_root() -> Path:
+    """Base directory for pipeline data. Use DATA_ROOT on hosts like Render; default is ./data under the repo."""
+    override = os.environ.get("DATA_ROOT", "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    return (PROJECT_ROOT / "data").resolve()
+
+
+DATA_DIR = get_data_root()
 RAW_DIR = DATA_DIR / "raw"
 PROCESSED_DIR = DATA_DIR / "processed"
 FINAL_DIR = DATA_DIR / "final"

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Run Showcase | Lead Pipeline Showcase{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <div>
+    <h1>Run the lead pipeline</h1>
+    <p class="lede">
+      This UI is a thin shell over the real discovery, extraction, enrichment, representative-selection,
+      and dual-export pipeline. It saves each run into its own folder and renders the resulting CSVs.
+    </p>
+  </div>
+</section>
+
+<section class="panel form-panel">
+  <form action="{{ url_for('submit_run') }}" method="post" class="run-form">
+    <label>
+      <span>Niche</span>
+      <select name="niche" required>
+        <option value="property managers">Property Managers</option>
+        <option value="interior designers">Interior Designers</option>
+      </select>
+    </label>
+    <label>
+      <span>Place</span>
+      <input name="place" type="text" list="place-options" placeholder="New York City" required>
+      <datalist id="place-options">
+        {% for place in place_examples %}
+        <option value="{{ place }}"></option>
+        {% endfor %}
+      </datalist>
+    </label>
+    <button type="submit">Run pipeline</button>
+  </form>
+  <div class="helper-copy">
+    <p>Supported niches: property managers, interior designers.</p>
+    <p>Supported places are constrained to the New York geography set used by the current discovery model.</p>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Recent runs</h2>
+  {% if recent_runs %}
+  <div class="runs-list">
+    {% for run in recent_runs %}
+    <a class="run-card" href="{{ url_for('results', niche=run.niche_slug, place=run.place_slug, run_id=run.run_id) }}">
+      <strong>{{ run.niche_display_name }}</strong>
+      <span>{{ run.place_display_name }}</span>
+      <span>{{ run.run_id }}</span>
+      <span class="status {{ run.status }}">{{ run.status }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty-state">No showcase runs yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

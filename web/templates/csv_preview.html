@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}{{ dataset_label }} | {{ metadata.run_id }}{% endblock %}
+
+{% block content %}
+<section class="panel result-header">
+  <div>
+    <h1>{{ dataset_label }}</h1>
+    <p class="lede">{{ metadata.niche_display_name }} in {{ metadata.place_display_name }} · {{ metadata.run_id }}</p>
+  </div>
+  <a class="back-link" href="{{ url_for('results', niche=metadata.niche_slug, place=metadata.place_slug, run_id=metadata.run_id) }}">Back to results</a>
+</section>
+
+<section class="panel">
+  <div class="section-heading">
+    <h2>Preview</h2>
+    <a href="{{ url_for('download_artifact', niche=metadata.niche_slug, place=metadata.place_slug, run_id=metadata.run_id, filename=filename) }}">Download CSV</a>
+  </div>
+  {% include "table_preview.html" %}
+</section>
+{% endblock %}

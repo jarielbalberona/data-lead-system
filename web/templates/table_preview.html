@@ -1,0 +1,29 @@
+{% set active_preview = preview if preview is defined else master_preview %}
+{% if active_preview.exists %}
+<div class="table-meta">
+  <span>Total rows: {{ active_preview.total_rows }}</span>
+  <span>Preview rows: {{ active_preview.preview_rows }}</span>
+</div>
+<div class="table-shell">
+  <table>
+    <thead>
+      <tr>
+        {% for column in active_preview.columns %}
+        <th>{{ column }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in active_preview.rows %}
+      <tr>
+        {% for column in active_preview.columns %}
+        <td>{{ row[column] }}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="empty-state">This artifact has not been generated yet.</p>
+{% endif %}
