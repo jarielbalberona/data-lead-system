@@ -1,5 +1,5 @@
 {% set active_preview = preview if preview is defined else master_preview %}
-{% if active_preview.exists %}
+{% if active_preview.exists and active_preview.total_rows > 0 %}
 <div class="table-meta">
   <span>Total rows: {{ active_preview.total_rows }}</span>
   <span>Preview rows: {{ active_preview.preview_rows }}</span>
@@ -24,6 +24,8 @@
     </tbody>
   </table>
 </div>
+{% elif active_preview.exists and active_preview.total_rows == 0 %}
+<p class="empty-state">The CSV was written but has no data rows (header only or empty). See the Outcome section above, or the main results page for all stage metrics.</p>
 {% else %}
-<p class="empty-state">This artifact has not been generated yet.</p>
+<p class="empty-state">This artifact has not been generated yet (run may still be in progress, or it stopped before export).</p>
 {% endif %}

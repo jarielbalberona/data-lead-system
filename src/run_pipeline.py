@@ -22,7 +22,7 @@ from export import (
 )
 from extract import extract_interior_designers, extract_property_managers
 from normalize import normalize_records
-from runs import RunContext, resolve_run_context
+from runs import RunContext, build_completed_run_result_summary, resolve_run_context
 
 
 def run(
@@ -87,11 +87,13 @@ def run_with_context(context: RunContext) -> dict[str, object]:
             "master_row_count": len(master_export),
             "outreach_ready_row_count": len(outreach_ready_export),
         }
+        result_summary = build_completed_run_result_summary(key_counts)
         metadata = context.write_metadata(
             started_at=started_at,
             finished_at=finished_at,
             status="completed",
             key_counts=key_counts,
+            result_summary=result_summary,
         )
     except Exception as error:
         finished_at = _utc_now()
@@ -100,6 +102,7 @@ def run_with_context(context: RunContext) -> dict[str, object]:
             finished_at=finished_at,
             status="failed",
             error_summary=f"{type(error).__name__}: {error}",
+            result_summary="",
         )
         raise
 

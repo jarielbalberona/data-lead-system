@@ -285,6 +285,29 @@ th {
   overflow: auto;
 }
 
+.result-summary-panel {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+}
+
+.result-summary-panel.muted {
+  border-color: #d2d6dc;
+  background: #f9fafb;
+}
+
+.result-summary-text {
+  white-space: pre-wrap;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0;
+  color: #1f2933;
+}
+
+.metrics-grid .metrics-fallback {
+  grid-column: 1 / -1;
+}
+
 @media (max-width: 640px) {
   .wrap {
     padding: 0 16px;

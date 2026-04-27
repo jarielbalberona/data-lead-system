@@ -40,12 +40,20 @@
 </section>
 {% endif %}
 
+{% include "outcome_panel.html" %}
+
 <section class="panel metrics-grid">
   {% for key, value in metadata.key_counts.items() %}
   <div class="metric">
     <span class="metric-label">{{ key.replace('_', ' ') }}</span>
     <strong>{{ value }}</strong>
   </div>
+  {% else %}
+  {% if metadata.status == "running" or metadata.status == "starting" %}
+  <p class="dataset-note metrics-fallback">Pipeline running — stage counts and CSV previews fill in when the run finishes.</p>
+  {% else %}
+  <p class="dataset-note metrics-fallback">No stage counts were recorded for this run (for example, stopped or partial metadata).</p>
+  {% endif %}
   {% endfor %}
 </section>
 

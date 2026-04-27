@@ -112,6 +112,7 @@ class RunContext:
         error_summary: str = "",
         pipeline_pid: int | None = None,
         stop_reason: str = "",
+        result_summary: str = "",
     ) -> dict[str, Any]:
         payload = {
             "run_id": self.run_id,
@@ -130,6 +131,7 @@ class RunContext:
             "error_summary": error_summary,
             "pipeline_pid": pipeline_pid,
             "stop_reason": stop_reason,
+            "result_summary": result_summary,
         }
         return payload
 
@@ -143,14 +145,19 @@ class RunContext:
         error_summary: str = "",
         pipeline_pid: int | None = None,
         stop_reason: str = "",
+        result_summary: str | None = None,
     ) -> dict[str, Any]:
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        existing = {}
+        existing: dict[str, Any] = {}
         if self.run_metadata_path.exists():
             try:
                 existing = load_run_metadata(self.run_metadata_path)
             except (OSError, json.JSONDecodeError):
                 existing = {}
+        if result_summary is not None:
+            resolved_result_summary = result_summary
+        else:
+            resolved_result_summary = str(existing.get("result_summary", ""))
         payload = self.metadata_payload(
             started_at=started_at,
             status=status,
@@ -159,6 +166,7 @@ class RunContext:
             error_summary=error_summary,
             pipeline_pid=existing.get("pipeline_pid") if pipeline_pid is None else pipeline_pid,
             stop_reason=stop_reason or str(existing.get("stop_reason", "")),
+            result_summary=resolved_result_summary,
         )
         self.run_metadata_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return payload
@@ -227,6 +235,62 @@ def resolve_run_context(
 
 def load_run_metadata(metadata_path: Path) -> dict[str, Any]:
     return json.loads(metadata_path.read_text(encoding="utf-8"))
+
+
+def build_completed_run_result_summary(key_counts: dict[str, int]) -> str:
+    """Human-readable explanation of pipeline outcome for a completed run (including zero-lead cases)."""
+    raw = int(key_counts.get("raw_discovery_url_count", 0))
+    accepted = int(key_counts.get("accepted_listing_page_count", 0))
+    extracted = int(key_counts.get("extracted_lead_count", 0))
+    master = int(key_counts.get("master_row_count", 0))
+    outreach = int(key_counts.get("outreach_ready_row_count", 0))
+
+    lines: list[str] = [
+        "Run finished successfully. Stage counts:",
+        f"· Discovery URLs (raw): {raw}",
+        f"· Listing pages accepted for extraction: {accepted}",
+        f"· Rows extracted (before dedupe): {extracted}",
+        f"· Master export rows: {master}",
+        f"· Outreach-ready rows: {outreach}",
+    ]
+
+    if raw == 0:
+        lines.append("")
+        lines.append(
+            "No candidate listing URLs were found for this niche and geography. "
+            "The pipeline did not fail—there was nothing to fetch for this combination."
+        )
+    elif accepted == 0:
+        lines.append("")
+        lines.append(
+            f"URLs were discovered ({raw}) but none were classified as accepted listing pages. "
+            "Classifier output may help: see processed/listing_pages_classified.json."
+        )
+    elif extracted == 0:
+        lines.append("")
+        lines.append(
+            f"{accepted} listing page(s) were accepted, but HTML extraction produced no lead rows. "
+            "Pages may not match the extractor, or listed no parseable businesses."
+        )
+    elif master == 0:
+        lines.append("")
+        lines.append(
+            "Extraction produced rows, but the master dataset is empty after normalization and validation. "
+            "See quality_summary.md and raw/processed artifacts."
+        )
+    elif outreach == 0 and master > 0:
+        lines.append("")
+        lines.append(
+            f"Master has {master} row(s), but outreach-ready is empty: "
+            "rows may be invalid, marked duplicate, or fail contact/website checks for outreach."
+        )
+    else:
+        lines.append("")
+        lines.append(
+            f"Leads are in the CSV exports ({master} master row(s), {outreach} outreach-ready row(s))."
+        )
+
+    return "\n".join(lines)
 
 
 def resolve_run_dir(

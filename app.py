@@ -103,6 +103,7 @@ def submit_run():
             finished_at=_utc_now(),
             status="failed",
             error_summary=f"{type(error).__name__}: {error}",
+            result_summary="",
         )
         return redirect(
             url_for(

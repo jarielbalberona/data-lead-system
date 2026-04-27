@@ -1,0 +1,11 @@
+{% if metadata.get("result_summary") and metadata.status == "completed" %}
+<section class="panel result-summary-panel">
+  <h2>Outcome</h2>
+  <pre class="result-summary-text">{{ metadata.result_summary }}</pre>
+</section>
+{% elif metadata.status == "completed" and not metadata.get("result_summary") %}
+<section class="panel result-summary-panel muted">
+  <h2>Outcome</h2>
+  <p class="dataset-note">This run completed before the outcome summary was added. Use the stage counts and quality summary on the main results page.</p>
+</section>
+{% endif %}
