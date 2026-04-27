@@ -48,7 +48,7 @@ MASTER_EXPORT_COLUMNS = [
     "extraction_timestamp",
 ]
 
-FINAL_EXPORT_COLUMNS = [
+OUTREACH_EXPORT_COLUMNS = [
     "lead_id",
     "niche",
     "business_name",
@@ -374,6 +374,10 @@ def prepare_master_export(dataframe: pd.DataFrame) -> pd.DataFrame:
 
 
 def prepare_final_export(dataframe: pd.DataFrame) -> pd.DataFrame:
+    return prepare_outreach_ready_export(dataframe)
+
+
+def prepare_outreach_ready_export(dataframe: pd.DataFrame) -> pd.DataFrame:
     prepared = dataframe.copy()
     if prepared.empty:
         return prepared
@@ -389,11 +393,11 @@ def prepare_final_export(dataframe: pd.DataFrame) -> pd.DataFrame:
     if len(prepared) > 100:
         prepared = prepared.head(100).copy()
 
-    for column_name in FINAL_EXPORT_COLUMNS:
+    for column_name in OUTREACH_EXPORT_COLUMNS:
         if column_name not in prepared.columns:
             prepared[column_name] = ""
 
-    return prepared[FINAL_EXPORT_COLUMNS]
+    return prepared[OUTREACH_EXPORT_COLUMNS]
 
 
 def write_quality_summary(
@@ -459,6 +463,11 @@ def export_master_csv(dataframe: pd.DataFrame, output_path: Path) -> None:
     prepare_master_export(dataframe).to_csv(output_path, index=False)
 
 
+def export_outreach_ready_csv(dataframe: pd.DataFrame, output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    prepare_outreach_ready_export(dataframe).to_csv(output_path, index=False)
+
+
 def export_final_csv(dataframe: pd.DataFrame, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    prepare_final_export(dataframe).to_csv(output_path, index=False)
+    prepare_outreach_ready_export(dataframe).to_csv(output_path, index=False)
