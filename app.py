@@ -37,6 +37,24 @@ PLACE_EXAMPLES = [
 app = Flask(__name__, template_folder="web/templates", static_folder="web/static")
 
 
+@app.template_filter("human_run_id")
+def human_run_id(value: object) -> str:
+    raw = str(value or "").strip()
+    parsed = _parse_run_id(raw)
+    if parsed is None:
+        return raw
+    return parsed.strftime("%b %d, %Y at %I:%M:%S %p UTC")
+
+
+@app.template_filter("human_datetime")
+def human_datetime(value: object) -> str:
+    raw = str(value or "").strip()
+    parsed = _parse_datetime_token(raw)
+    if parsed is None:
+        return raw
+    return parsed.strftime("%b %d, %Y at %I:%M:%S %p UTC")
+
+
 @app.get("/healthz")
 def healthz():
     return ("ok", 200)
@@ -243,6 +261,33 @@ def _launch_pipeline_subprocess(context) -> subprocess.Popen:
 
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _parse_run_id(value: str) -> datetime | None:
+    try:
+        return datetime.strptime(value, "%Y-%m-%dt%H%M%Sz").replace(tzinfo=UTC)
+    except ValueError:
+        return None
+
+
+def _parse_datetime_token(value: str) -> datetime | None:
+    normalized = value.strip()
+    if not normalized:
+        return None
+
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        parsed = _parse_run_id(value)
+        if parsed is None:
+            return None
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 @app.errorhandler(404)

@@ -12,13 +12,13 @@
 <section class="panel result-header">
   <div>
     <h1>{{ metadata.niche_display_name }} in {{ metadata.place_display_name }}</h1>
-    <p class="lede">{{ metadata.run_id }}</p>
+    <p class="lede">{{ metadata.run_id | human_run_id }}</p>
   </div>
   <div class="status-block">
     <span class="status {{ metadata.status }}">{{ metadata.status }}</span>
     <div class="timestamps">
-      <div><strong>Started:</strong> {{ metadata.started_at }}</div>
-      <div><strong>Finished:</strong> {{ metadata.finished_at or "still running" }}</div>
+      <div><strong>Started:</strong> {{ metadata.started_at | human_datetime }}</div>
+      <div><strong>Finished:</strong> {{ metadata.finished_at | human_datetime if metadata.finished_at else "still running" }}</div>
     </div>
     <div class="run-actions">
       {% if metadata.status == "running" %}
