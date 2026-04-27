@@ -2,6 +2,12 @@
 
 {% block title %}{{ metadata.run_id }} | Lead Pipeline Showcase{% endblock %}
 
+{% block head_extra %}
+{% if auto_refresh %}
+<meta http-equiv="refresh" content="5">
+{% endif %}
+{% endblock %}
+
 {% block content %}
 <section class="panel result-header">
   <div>
@@ -16,6 +22,13 @@
     </div>
   </div>
 </section>
+
+{% if auto_refresh %}
+<section class="panel running-panel">
+  <h2>Run in progress</h2>
+  <p>This page refreshes automatically every 5 seconds while the pipeline is still writing artifacts.</p>
+</section>
+{% endif %}
 
 <section class="panel metrics-grid">
   {% for key, value in metadata.key_counts.items() %}

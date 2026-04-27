@@ -87,6 +87,22 @@ a {
   cursor: pointer;
 }
 
+.run-form button:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.run-form-status {
+  display: grid;
+  gap: 6px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1e3a8a;
+}
+
 .helper-copy {
   margin-top: 16px;
   color: #52606d;
@@ -203,6 +219,11 @@ th {
 .dataset-note,
 .empty-state {
   color: #52606d;
+}
+
+.running-panel {
+  border-color: #bfdbfe;
+  background: #eff6ff;
 }
 
 .summary-box,

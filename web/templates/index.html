@@ -14,7 +14,7 @@
 </section>
 
 <section class="panel form-panel">
-  <form action="{{ url_for('submit_run') }}" method="post" class="run-form">
+  <form action="{{ url_for('submit_run') }}" method="post" class="run-form" data-run-form>
     <label>
       <span>Niche</span>
       <select name="niche" required>
@@ -31,8 +31,12 @@
         {% endfor %}
       </datalist>
     </label>
-    <button type="submit">Run pipeline</button>
+    <button type="submit" data-submit-button>Run pipeline</button>
   </form>
+  <div class="run-form-status" data-run-form-status hidden>
+    <strong>Starting run.</strong>
+    <span>The results page will open immediately and refresh while artifacts are being generated.</span>
+  </div>
   <div class="helper-copy">
     <p>Supported niches: property managers, interior designers.</p>
     <p>Supported places are constrained to the New York geography set used by the current discovery model.</p>
@@ -56,4 +60,18 @@
   <p class="empty-state">No showcase runs yet.</p>
   {% endif %}
 </section>
+
+<script>
+  const runForm = document.querySelector("[data-run-form]");
+  const submitButton = document.querySelector("[data-submit-button]");
+  const runFormStatus = document.querySelector("[data-run-form-status]");
+
+  if (runForm && submitButton && runFormStatus) {
+    runForm.addEventListener("submit", () => {
+      submitButton.disabled = true;
+      submitButton.textContent = "Starting run...";
+      runFormStatus.hidden = false;
+    });
+  }
+</script>
 {% endblock %}

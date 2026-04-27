@@ -2,6 +2,12 @@
 
 {% block title %}{{ dataset_label }} | {{ metadata.run_id }}{% endblock %}
 
+{% block head_extra %}
+{% if auto_refresh %}
+<meta http-equiv="refresh" content="5">
+{% endif %}
+{% endblock %}
+
 {% block content %}
 <section class="panel result-header">
   <div>
@@ -10,6 +16,13 @@
   </div>
   <a class="back-link" href="{{ url_for('results', niche=metadata.niche_slug, place=metadata.place_slug, run_id=metadata.run_id) }}">Back to results</a>
 </section>
+
+{% if auto_refresh %}
+<section class="panel running-panel">
+  <h2>Run in progress</h2>
+  <p>This page refreshes automatically every 5 seconds while the pipeline is still writing artifacts.</p>
+</section>
+{% endif %}
 
 <section class="panel">
   <div class="section-heading">
