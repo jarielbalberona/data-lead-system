@@ -21,20 +21,6 @@ DEFAULT_RETRY_ATTEMPTS = 1
 DEFAULT_CRAWL_DELAY_SECONDS = 1.0
 DEFAULT_USER_AGENT = "LeadExtractionAssignmentBot/2.0 (+terminal-based educational pipeline; contact: local-run)"
 
-PROPERTY_MANAGER_SOURCE_URLS = [
-    "https://hoamanagementcompanies.net/illinois/hoa-management-companies-in-chicago-il",
-    "https://hoamanagementcompanies.net/texas/hoa-management-companies-in-dallas-tx",
-    "https://hoamanagementcompanies.net/california/hoa-management-companies-in-los-angeles-ca",
-]
-
-INTERIOR_DESIGNER_SOURCE_URLS = [
-    "https://www.interiordesignlink.com/california-interior-designers-decorators.html",
-    "https://www.interiordesignlink.com/illinois-interior-designers-decorators.html",
-    "https://www.interiordesignlink.com/texas-interior-designers-decorators.html",
-    "https://www.interiordesignlink.com/chicago-interior-designers-decorators-illinois-60290.html",
-]
-
-
 @dataclass(frozen=True)
 class PipelineConfig:
     project_root: Path = PROJECT_ROOT

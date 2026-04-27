@@ -251,13 +251,13 @@ def _stable_token(value: str) -> str:
 DISCOVERY_SOURCE_REGISTRY: tuple[DiscoveryRegistryEntry, ...] = (
     DiscoveryRegistryEntry(
         source_registry_id="source_registry_" + _stable_token(
-            "property_manager|propertymanagement.com|local_business_directory|4|https://propertymanagement.com/location/ny"
+            "property_manager|hoamanagementcompanies.net|local_business_directory|4|https://hoamanagementcompanies.net/"
         ),
         niche="property_manager",
-        source_name="propertymanagement.com",
+        source_name="hoamanagementcompanies.net",
         source_type="local_business_directory",
         source_priority=4,
-        bootstrap_url="https://propertymanagement.com/location/ny",
+        bootstrap_url="https://hoamanagementcompanies.net/",
     ),
     DiscoveryRegistryEntry(
         source_registry_id="source_registry_" + _stable_token(
@@ -448,34 +448,71 @@ def _collect_property_management_candidates(
     config: PipelineConfig,
 ) -> list[CandidateListingUrl]:
     registry_entry = _registry_entry_for("property_manager")
+    homepage_result = _fetch_url(session, registry_entry.bootstrap_url, config)
+    if not homepage_result["ok"]:
+        return []
+
+    homepage_soup = BeautifulSoup(str(homepage_result["text"]), "html.parser")
+    state_page_url = _extract_hoa_state_page_url(homepage_soup, "new york", registry_entry.bootstrap_url)
+    if not state_page_url:
+        return []
+
+    state_page_result = _fetch_url(session, state_page_url, config)
     candidates: list[CandidateListingUrl] = []
 
-    for geography in NEW_YORK_GEOGRAPHIES:
-        candidate_url = (
-            f"https://propertymanagement.com/location/ny/{_property_management_location_slug(geography)}"
+    candidates.append(
+        CandidateListingUrl(
+            source_registry_id=registry_entry.source_registry_id,
+            discovery_candidate_id=_candidate_id(
+                registry_entry.source_registry_id,
+                state_page_url,
+                "new-york-city",
+                "New York",
+            ),
+            niche="property_manager",
+            source_name=registry_entry.source_name,
+            source_type=registry_entry.source_type,
+            source_priority=registry_entry.source_priority,
+            discovery_query=_preferred_query("property_manager", "new-york-city", "directory"),
+            geography_slug="new-york-city",
+            geography_name="New York",
+            candidate_url=state_page_url,
+            discovery_source_url=registry_entry.bootstrap_url,
+            discovered_at=_timestamp_now(),
+            status="discovered" if state_page_result["ok"] else "fetch_failed",
+            http_status=state_page_result["status_code"],
+            failure_reason=state_page_result["failure_reason"],
         )
-        response = _fetch_url(session, candidate_url, config)
-        candidates.append(
-            CandidateListingUrl(
-                source_registry_id=registry_entry.source_registry_id,
-                discovery_candidate_id=_candidate_id(
-                    registry_entry.source_registry_id, candidate_url, geography.slug, geography.display_name
-                ),
-                niche="property_manager",
-                source_name=registry_entry.source_name,
-                source_type=registry_entry.source_type,
-                source_priority=registry_entry.source_priority,
-                discovery_query=_preferred_query("property_manager", geography.slug, "directory"),
-                geography_slug=geography.slug,
-                geography_name=geography.display_name,
-                candidate_url=candidate_url,
-                discovery_source_url=registry_entry.bootstrap_url,
-                discovered_at=_timestamp_now(),
-                status="discovered" if response["ok"] else "fetch_failed",
-                http_status=response["status_code"],
-                failure_reason=response["failure_reason"],
+    )
+
+    if state_page_result["ok"]:
+        state_soup = BeautifulSoup(str(state_page_result["text"]), "html.parser")
+        for geography in NEW_YORK_GEOGRAPHIES:
+            city_page_url = _extract_hoa_city_page_url(state_soup, geography.display_name, state_page_url)
+            if not city_page_url:
+                continue
+            response = _fetch_url(session, city_page_url, config)
+            candidates.append(
+                CandidateListingUrl(
+                    source_registry_id=registry_entry.source_registry_id,
+                    discovery_candidate_id=_candidate_id(
+                        registry_entry.source_registry_id, city_page_url, geography.slug, geography.display_name
+                    ),
+                    niche="property_manager",
+                    source_name=registry_entry.source_name,
+                    source_type=registry_entry.source_type,
+                    source_priority=registry_entry.source_priority,
+                    discovery_query=_preferred_query("property_manager", geography.slug, "directory"),
+                    geography_slug=geography.slug,
+                    geography_name=geography.display_name,
+                    candidate_url=city_page_url,
+                    discovery_source_url=state_page_url,
+                    discovered_at=_timestamp_now(),
+                    status="discovered" if response["ok"] else "fetch_failed",
+                    http_status=response["status_code"],
+                    failure_reason=response["failure_reason"],
+                )
             )
-        )
 
     return candidates
 
@@ -585,6 +622,24 @@ def _extract_ids_region_url(homepage_html: str, *, state_code: str) -> str:
     return match.group("url")
 
 
+def _extract_hoa_state_page_url(soup: BeautifulSoup, state_name: str, base_url: str) -> str:
+    for anchor in soup.select("a[href]"):
+        title = (anchor.get("title") or "").strip().lower()
+        text = _normalize_link_text(anchor.get_text(" ", strip=True))
+        href = (anchor.get("href") or "").strip()
+        if state_name in title or text == state_name:
+            return _absolute_url(base_url, href)
+    return ""
+
+
+def _extract_hoa_city_page_url(soup: BeautifulSoup, geography_name: str, base_url: str) -> str:
+    target = _normalize_link_text(geography_name)
+    for anchor in soup.select("a[href]"):
+        if _normalize_link_text(anchor.get_text(" ", strip=True)) == target:
+            return _absolute_url(base_url, (anchor.get("href") or "").strip())
+    return ""
+
+
 def _classify_listing_page(
     *,
     niche: str,
@@ -601,9 +656,11 @@ def _classify_listing_page(
     path = urlparse(url).path.rstrip("/")
 
     if niche == "property_manager":
-        if path.startswith("/location/ny") and "property managers" in text:
-            return "accepted_listing_page", "PropertyManagement NY location page contains property manager listing language."
-        return "rejected_irrelevant", "Property management candidate did not match the expected NY location listing pattern."
+        if "hoa management companies in new york" in title or "property management companies for hoa in new york by city" in text:
+            return "accepted_listing_page", "New York HOA state page exposes city-level listing links."
+        if "hoa management company" in text and any(token in path for token in ("/new-york/", "/brooklyn", "/yonkers", "/white-plains")):
+            return "accepted_listing_page", "HOA city listing page exposes company profile links."
+        return "rejected_irrelevant", "Property management candidate did not match the expected HOA state/city listing pattern."
 
     if niche == "interior_designer":
         profile_links = _extract_ids_profile_links(soup)
@@ -726,6 +783,14 @@ def _canonicalize_url(url: str) -> str:
     parsed = urlparse(url)
     normalized_path = parsed.path.rstrip("/") or "/"
     return f"{parsed.scheme}://{parsed.netloc}{normalized_path}"
+
+
+def _absolute_url(base_url: str, href: str) -> str:
+    return requests.compat.urljoin(base_url, href)
+
+
+def _normalize_link_text(value: str) -> str:
+    return " ".join(value.strip().lower().split())
 
 
 def _candidate_id(source_registry_id: str, candidate_url: str, geography_slug: str, geography_name: str) -> str:

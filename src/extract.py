@@ -3,20 +3,18 @@ from __future__ import annotations
 import gzip
 import json
 import re
+import time
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
 
-from config import (
-    INTERIOR_DESIGNER_SOURCE_URLS,
-    PROPERTY_MANAGER_SOURCE_URLS,
-    PipelineConfig,
-)
+from config import PipelineConfig
+from discovery import ClassifiedListingPage, classify_candidate_listing_urls
 
 @dataclass(frozen=True)
 class RawLeadRecord:
@@ -32,6 +30,13 @@ class RawLeadRecord:
     extraction_timestamp: str
     source_directory: str
     source_listing_url: str
+    source_registry_id: str = ""
+    listing_page_id: str = ""
+    source_priority: int = 0
+    listing_page_status: str = ""
+    discovery_queries: str = ""
+    discovery_candidate_ids: str = ""
+    supporting_geographies: str = ""
 
 
 def _normalize_text(value: str | None) -> str:
@@ -64,6 +69,8 @@ def _fetch_soup(session: requests.Session, url: str, config: PipelineConfig) -> 
 
     encoding = response.encoding or "utf-8"
     html = content.decode(encoding, errors="replace")
+    if urlparse(url).netloc:
+        time.sleep(config.crawl_delay_seconds)
     return BeautifulSoup(html, "html.parser")
 
 
@@ -92,7 +99,7 @@ def _extract_hoa_company_links(
     session: requests.Session,
     source_url: str,
     config: PipelineConfig,
-    max_links: int = 12,
+    max_links: int | None = None,
 ) -> list[str]:
     soup = _fetch_soup(session, source_url, config)
     company_links: list[str] = []
@@ -107,7 +114,7 @@ def _extract_hoa_company_links(
         if not href.startswith("/") or href.startswith("/zipcode/"):
             continue
         company_links.append(urljoin(source_url, href))
-        if len(company_links) >= max_links:
+        if max_links is not None and len(company_links) >= max_links:
             break
 
     return company_links
@@ -147,7 +154,7 @@ def _extract_business_name(soup: BeautifulSoup) -> str:
 def _extract_hoa_profile(
     session: requests.Session,
     profile_url: str,
-    listing_url: str,
+    listing_page: ClassifiedListingPage,
     config: PipelineConfig,
 ) -> RawLeadRecord:
     soup = _fetch_soup(session, profile_url, config)
@@ -181,7 +188,14 @@ def _extract_hoa_profile(
         source_url=profile_url,
         extraction_timestamp=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         source_directory="hoamanagementcompanies.net",
-        source_listing_url=listing_url,
+        source_listing_url=listing_page.canonical_url,
+        source_registry_id=listing_page.source_registry_id,
+        listing_page_id=listing_page.listing_page_id,
+        source_priority=listing_page.source_priority,
+        listing_page_status=listing_page.listing_page_status,
+        discovery_queries=" || ".join(listing_page.supporting_queries),
+        discovery_candidate_ids=" || ".join(listing_page.supporting_candidate_ids),
+        supporting_geographies=" || ".join(listing_page.supporting_geography_names),
     )
 
 
@@ -414,6 +428,98 @@ def _extract_interiordesignlink_page(
     return page_records
 
 
+def _extract_ids_profile_links(
+    session: requests.Session,
+    listing_page: ClassifiedListingPage,
+    config: PipelineConfig,
+) -> list[str]:
+    soup = _fetch_soup(session, listing_page.canonical_url, config)
+    profile_links: list[str] = []
+    seen_urls: set[str] = set()
+
+    for anchor in soup.select("a[href]"):
+        href = (anchor.get("href") or "").strip()
+        if not href.startswith("/") or "?" in href or "#" in href:
+            continue
+        if href.count("/") != 1:
+            continue
+        absolute_url = urljoin(listing_page.canonical_url, href)
+        if absolute_url in seen_urls:
+            continue
+        if href in {
+            "/",
+            "/designers",
+            "/designer",
+            "/search",
+            "/homeowner",
+            "/homeowner-2",
+            "/homeowner-blog",
+            "/featuredinteriors",
+            "/contact-ids",
+            "/request-help",
+            "/find-your-way",
+            "/find-your-style",
+        }:
+            continue
+        seen_urls.add(absolute_url)
+        profile_links.append(absolute_url)
+
+    return profile_links
+
+
+def _extract_ids_profile(
+    session: requests.Session,
+    profile_url: str,
+    listing_page: ClassifiedListingPage,
+    config: PipelineConfig,
+) -> RawLeadRecord | None:
+    soup = _fetch_soup(session, profile_url, config)
+
+    heading = soup.find("h1")
+    business_name = _normalize_text(heading.get_text(" ", strip=True) if heading else "")
+    if not business_name:
+        return None
+
+    website_anchor = None
+    for anchor in soup.select("a[href]"):
+        href = (anchor.get("href") or "").strip()
+        text = _normalize_text(anchor.get_text(" ", strip=True)).lower()
+        if href.startswith("http") and "theidslist.com" not in href.lower():
+            website_anchor = anchor
+            if text == "website":
+                break
+
+    return RawLeadRecord(
+        niche="interior_designer",
+        business_name=business_name,
+        phone="",
+        email="",
+        website=_normalize_text(website_anchor.get("href", "").strip() if website_anchor else ""),
+        address="",
+        city="",
+        state="",
+        source_url=profile_url,
+        extraction_timestamp=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        source_directory="theidslist.com",
+        source_listing_url=listing_page.canonical_url,
+        source_registry_id=listing_page.source_registry_id,
+        listing_page_id=listing_page.listing_page_id,
+        source_priority=listing_page.source_priority,
+        listing_page_status=listing_page.listing_page_status,
+        discovery_queries=" || ".join(listing_page.supporting_queries),
+        discovery_candidate_ids=" || ".join(listing_page.supporting_candidate_ids),
+        supporting_geographies=" || ".join(listing_page.supporting_geography_names),
+    )
+
+
+def _accepted_listing_pages(config: PipelineConfig) -> list[ClassifiedListingPage]:
+    return [
+        page
+        for page in classify_candidate_listing_urls(config=config)
+        if page.listing_page_status == "accepted_listing_page"
+    ]
+
+
 def extract_property_managers(config: PipelineConfig | None = None) -> list[dict[str, Any]]:
     active_config = config or PipelineConfig()
     active_config.ensure_directories()
@@ -421,15 +527,25 @@ def extract_property_managers(config: PipelineConfig | None = None) -> list[dict
     extraction_timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
     extracted_records: list[RawLeadRecord] = []
+    seen_company_urls: set[str] = set()
 
-    for listing_url in PROPERTY_MANAGER_SOURCE_URLS:
-        for company_url in _extract_hoa_company_links(session, listing_url, active_config):
-            record = _extract_hoa_profile(
-                session=session,
-                profile_url=company_url,
-                listing_url=listing_url,
-                config=active_config,
-            )
+    for listing_page in _accepted_listing_pages(active_config):
+        if listing_page.niche != "property_manager" or listing_page.source_name != "hoamanagementcompanies.net":
+            continue
+
+        for company_url in _extract_hoa_company_links(session, listing_page.canonical_url, active_config):
+            if company_url in seen_company_urls:
+                continue
+            seen_company_urls.add(company_url)
+            try:
+                record = _extract_hoa_profile(
+                    session=session,
+                    profile_url=company_url,
+                    listing_page=listing_page,
+                    config=active_config,
+                )
+            except requests.RequestException:
+                continue
             if record.phone or record.website or record.address:
                 extracted_records.append(record)
 
@@ -448,9 +564,22 @@ def extract_interior_designers(config: PipelineConfig | None = None) -> list[dic
     extraction_timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
     extracted_records: list[RawLeadRecord] = []
+    seen_profile_urls: set[str] = set()
 
-    for listing_url in INTERIOR_DESIGNER_SOURCE_URLS:
-        extracted_records.extend(_extract_interiordesignlink_page(session, listing_url, active_config))
+    for listing_page in _accepted_listing_pages(active_config):
+        if listing_page.niche != "interior_designer" or listing_page.source_name != "theidslist.com":
+            continue
+
+        for profile_url in _extract_ids_profile_links(session, listing_page, active_config):
+            if profile_url in seen_profile_urls:
+                continue
+            seen_profile_urls.add(profile_url)
+            try:
+                record = _extract_ids_profile(session, profile_url, listing_page, active_config)
+            except requests.RequestException:
+                continue
+            if record is not None and (record.business_name or record.website):
+                extracted_records.append(record)
 
     _write_raw_records(
         extracted_records,
