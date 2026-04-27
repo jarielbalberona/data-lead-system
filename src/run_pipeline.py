@@ -7,6 +7,7 @@ from export import (
     export_final_csv,
     export_master_csv,
     export_outreach_ready_csv,
+    prepare_master_export,
     prepare_outreach_ready_export,
     write_quality_summary,
 )
@@ -34,8 +35,11 @@ def run() -> None:
     write_quality_summary(
         raw_record_count=len(records),
         processed_dataframe=deduped,
-        final_dataframe=final_export,
+        master_dataframe=prepare_master_export(deduped),
+        outreach_ready_dataframe=final_export,
         output_path=config.docs_dir / "quality-summary.md",
+        discovery_raw_output_path=config.discovery_raw_output_path,
+        classified_listing_pages_output_path=config.classified_listing_pages_output_path,
     )
     print(f"Exported {len(final_export)} rows to {config.final_dir / 'leads.csv'}")
 

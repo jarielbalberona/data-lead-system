@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -82,6 +83,25 @@ OUTREACH_EXPORT_COLUMNS = [
     "ready_for_phone",
     "ready_for_outreach",
     "outreach_block_reason",
+]
+
+TARGET_GEOGRAPHY_TERMS = [
+    "New York City",
+    "Brooklyn",
+    "Queens",
+    "Manhattan",
+    "Bronx",
+    "Staten Island",
+    "Yonkers",
+    "White Plains",
+    "New Rochelle",
+    "Mount Vernon",
+    "Long Island",
+    "Hempstead",
+    "Oyster Bay",
+    "Huntington",
+    "Brookhaven",
+    "Islip",
 ]
 
 
@@ -403,37 +423,93 @@ def prepare_outreach_ready_export(dataframe: pd.DataFrame) -> pd.DataFrame:
 def write_quality_summary(
     raw_record_count: int,
     processed_dataframe: pd.DataFrame,
-    final_dataframe: pd.DataFrame,
+    master_dataframe: pd.DataFrame,
+    outreach_ready_dataframe: pd.DataFrame,
     output_path: Path,
+    *,
+    discovery_raw_output_path: Path | None = None,
+    classified_listing_pages_output_path: Path | None = None,
 ) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    rejected_count = int((processed_dataframe["validation_status"] != "valid").sum())
-    final_niche_counts = final_dataframe["niche"].value_counts().to_dict()
-    multi_contact_groups = int((processed_dataframe["contact_group_id"].value_counts() > 1).sum())
-    multi_business_groups = int((processed_dataframe["business_group_id"].value_counts() > 1).sum())
-    multi_location_groups = int((processed_dataframe["location_group_id"].value_counts() > 1).sum())
-    final_email_count = int(final_dataframe["normalized_email"].astype(bool).sum())
-    final_phone_count = int(final_dataframe["normalized_phone"].astype(bool).sum())
-    final_website_count = int(final_dataframe["website_domain"].astype(bool).sum())
-    confirmed_duplicates = int((processed_dataframe["dedupe_status"] == "confirmed_duplicate").sum())
-    review_rows = int((final_dataframe["dedupe_status"] == "possible_duplicate_needs_review").sum())
+    processed_validation = _series_from_column(processed_dataframe, "validation_status")
+    processed_contact_groups = _series_from_column(processed_dataframe, "contact_group_id")
+    processed_business_groups = _series_from_column(processed_dataframe, "business_group_id")
+    processed_location_groups = _series_from_column(processed_dataframe, "location_group_id")
+    processed_website_validation = _series_from_column(
+        processed_dataframe,
+        "website_validation_status",
+        default="missing_website",
+    )
+    processed_website = _series_from_column(processed_dataframe, "website")
+    processed_listing_email = _series_from_column(processed_dataframe, "listing_email")
+    processed_preferred_email = _series_from_column(processed_dataframe, "preferred_email")
+    processed_listing_phone = _series_from_column(processed_dataframe, "listing_phone")
+    processed_preferred_phone = _series_from_column(processed_dataframe, "preferred_phone")
+    processed_dedupe_status = _series_from_column(processed_dataframe, "dedupe_status")
+
+    rejected_count = int((processed_validation != "valid").sum())
+    master_niche_counts = master_dataframe["niche"].value_counts().to_dict()
+    multi_contact_groups = int((processed_contact_groups.value_counts() > 1).sum())
+    multi_business_groups = int((processed_business_groups.value_counts() > 1).sum())
+    multi_location_groups = int((processed_location_groups.value_counts() > 1).sum())
+    outreach_email_count = _truthy_count(_series_from_column(outreach_ready_dataframe, "normalized_email"))
+    outreach_phone_count = _truthy_count(_series_from_column(outreach_ready_dataframe, "normalized_phone"))
+    outreach_website_count = _truthy_count(_series_from_column(outreach_ready_dataframe, "website_domain"))
+    confirmed_duplicates = int((processed_dedupe_status == "confirmed_duplicate").sum())
+    review_rows = int((_series_from_column(master_dataframe, "dedupe_status") == "possible_duplicate_needs_review").sum())
+    discovery_raw_count = _load_json_row_count(discovery_raw_output_path)
+    classified_listing_pages = _load_json_rows(classified_listing_pages_output_path)
+    accepted_listing_pages = sum(
+        1 for row in classified_listing_pages if str(row.get("listing_page_status", "")).strip() == "accepted_listing_page"
+    )
+    rejected_listing_pages = max(len(classified_listing_pages) - accepted_listing_pages, 0)
+    rows_with_website = _truthy_count(processed_website)
+    website_enriched_rows = int(processed_website_validation.astype(str).str.strip().ne("missing_website").sum())
+    listing_email_count = _truthy_count(processed_listing_email)
+    preferred_email_count = _truthy_count(processed_preferred_email)
+    listing_phone_count = _truthy_count(processed_listing_phone)
+    preferred_phone_count = _truthy_count(processed_preferred_phone)
+    dead_website_count = int((processed_website_validation == "dead").sum())
+    mismatched_website_count = int((processed_website_validation == "mismatch").sum())
+    ready_series = _bool_series(outreach_ready_dataframe, "ready_for_outreach")
+    blocked_outreach_rows = int((~ready_series).sum())
+    ready_outreach_rows = int(ready_series.sum())
+    geography_counts = _geography_counts(master_dataframe)
 
     lines = [
         "# Quality Summary",
         "",
+        "## Discovery Metrics",
+        "",
+        f"- raw discovery URL count: `{discovery_raw_count}`",
+        f"- listing pages accepted: `{accepted_listing_pages}`",
+        f"- listing pages rejected: `{rejected_listing_pages}`",
+        f"- extracted lead count before enrichment: `{raw_record_count}`",
+        "",
         "## Core Counts",
         "",
-        f"- raw record count: `{raw_record_count}`",
         f"- processed record count: `{len(processed_dataframe)}`",
-        f"- final record count: `{len(final_dataframe)}`",
+        f"- master row count: `{len(master_dataframe)}`",
+        f"- outreach-ready row count: `{len(outreach_ready_dataframe)}`",
         f"- rejected count: `{rejected_count}`",
         "",
-        "## Final Count by Niche",
+        "## Enrichment Metrics",
+        "",
+        f"- rows with website: `{rows_with_website}`",
+        f"- website enrichment coverage: `{website_enriched_rows}/{rows_with_website}`",
+        f"- email coverage before enrichment: `{listing_email_count}`",
+        f"- email coverage after enrichment: `{preferred_email_count}`",
+        f"- phone coverage before enrichment: `{listing_phone_count}`",
+        f"- phone coverage after enrichment: `{preferred_phone_count}`",
+        f"- dead website count: `{dead_website_count}`",
+        f"- mismatched website count: `{mismatched_website_count}`",
+        "",
+        "## Count by Niche",
         "",
     ]
 
-    for niche, count in final_niche_counts.items():
+    for niche, count in master_niche_counts.items():
         lines.append(f"- {niche}: `{count}`")
 
     lines.extend(
@@ -447,15 +523,80 @@ def write_quality_summary(
             f"- confirmed duplicates excluded from final export: `{confirmed_duplicates}`",
             f"- possible duplicate rows retained for review: `{review_rows}`",
             "",
-            "## Final Contact Coverage",
+            "## Representative Selection",
             "",
-            f"- records with email: `{final_email_count}`",
-            f"- records with phone: `{final_phone_count}`",
-            f"- records with website: `{final_website_count}`",
+            f"- rows reduced by representative selection: `{max(len(master_dataframe) - len(outreach_ready_dataframe), 0)}`",
+            f"- outreach-ready rows marked ready: `{ready_outreach_rows}`",
+            f"- outreach-ready rows blocked: `{blocked_outreach_rows}`",
+            f"- representative groups emitted: `{len(outreach_ready_dataframe)}`",
+            "",
+            "## Outreach-Ready Contact Coverage",
+            "",
+            f"- records with email: `{outreach_email_count}`",
+            f"- records with phone: `{outreach_phone_count}`",
+            f"- records with website: `{outreach_website_count}`",
         ]
     )
 
+    if geography_counts:
+        lines.extend(["", "## Count by Geography", ""])
+        for geography_name, count in geography_counts.items():
+            lines.append(f"- {geography_name}: `{count}`")
+
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _load_json_rows(path: Path | None) -> list[dict[str, object]]:
+    if path is None or not path.exists():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if isinstance(payload, list):
+        return [row for row in payload if isinstance(row, dict)]
+    return []
+
+
+def _load_json_row_count(path: Path | None) -> int:
+    return len(_load_json_rows(path))
+
+
+def _series_from_column(dataframe: pd.DataFrame, column_name: str, default: object = "") -> pd.Series:
+    if column_name not in dataframe.columns:
+        return pd.Series([default] * len(dataframe), index=dataframe.index, dtype="object")
+    return dataframe[column_name]
+
+
+def _truthy_count(series: pd.Series) -> int:
+    return int(series.astype(str).str.strip().astype(bool).sum())
+
+
+def _bool_series(dataframe: pd.DataFrame, column_name: str) -> pd.Series:
+    if column_name not in dataframe.columns:
+        return pd.Series([False] * len(dataframe), index=dataframe.index, dtype="bool")
+    return dataframe[column_name].fillna(False).astype(bool)
+
+
+def _geography_counts(dataframe: pd.DataFrame) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    if dataframe.empty:
+        return counts
+
+    for _, row in dataframe.iterrows():
+        haystacks = " || ".join(
+            [
+                str(row.get("city", "")).strip(),
+                str(row.get("state", "")).strip(),
+                str(row.get("discovery_geography", "")).strip(),
+                str(row.get("supporting_geographies", "")).strip(),
+            ]
+        ).lower()
+        for geography_name in TARGET_GEOGRAPHY_TERMS:
+            if geography_name.lower() in haystacks:
+                counts[geography_name] = counts.get(geography_name, 0) + 1
+
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
 
 
 def export_master_csv(dataframe: pd.DataFrame, output_path: Path) -> None:
