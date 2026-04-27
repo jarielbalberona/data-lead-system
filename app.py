@@ -13,7 +13,7 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from runs import list_run_metadata, load_run_metadata, resolve_run_context, resolve_run_dir, stop_run_from_metadata
+from runs import delete_run_dir, list_run_metadata, load_run_metadata, resolve_run_context, resolve_run_dir, stop_run_from_metadata
 
 
 PREVIEW_ROW_LIMIT = 25
@@ -176,6 +176,13 @@ def stop_run(niche: str, place: str, run_id: str):
     _run_dir, metadata = _load_run(niche, place, run_id)
     stop_run_from_metadata(metadata)
     return redirect(url_for("results", niche=niche, place=place, run_id=run_id))
+
+
+@app.post("/results/<niche>/<place>/<run_id>/delete")
+def delete_run(niche: str, place: str, run_id: str):
+    run_dir, metadata = _load_run(niche, place, run_id)
+    delete_run_dir(run_dir, metadata)
+    return redirect(url_for("runs_index", niche=niche, place=place))
 
 
 def _load_run(niche: str, place: str, run_id: str) -> tuple[Path, dict[str, object]]:

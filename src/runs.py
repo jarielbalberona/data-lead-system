@@ -4,6 +4,7 @@ import json
 import os
 import re
 import signal
+import shutil
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -307,6 +308,15 @@ def stop_run_from_metadata(metadata: dict[str, Any], *, reason: str = "Stopped b
         pipeline_pid=pid,
         stop_reason=reason,
     )
+
+
+def delete_run_dir(run_dir: Path, metadata: dict[str, Any] | None = None) -> None:
+    if metadata is not None and str(metadata.get("status", "")).strip() == "running":
+        stop_run_from_metadata(metadata, reason="Stopped before deletion")
+    if run_dir.exists():
+        shutil.rmtree(run_dir)
+
+
 def _resolve_niche(niche_input: str) -> tuple[str, str, str]:
     normalized = slugify(niche_input)
     for niche_key, metadata in SUPPORTED_NICHES.items():

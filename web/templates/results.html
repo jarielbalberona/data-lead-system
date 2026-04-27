@@ -26,6 +26,9 @@
         <button type="submit" class="secondary-button">Stop run</button>
       </form>
       {% endif %}
+      <form action="{{ url_for('delete_run', niche=metadata.niche_slug, place=metadata.place_slug, run_id=metadata.run_id) }}" method="post" onsubmit="return confirm('Delete this run and all saved artifacts?');">
+        <button type="submit" class="danger-button">Delete run</button>
+      </form>
     </div>
   </div>
 </section>
