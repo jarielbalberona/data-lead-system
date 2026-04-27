@@ -73,14 +73,6 @@
   </div>
 </section>
 
-<section class="panel">
-  <div class="section-heading">
-    <h2>Master dataset</h2>
-    <a href="{{ url_for('results_master', niche=metadata.niche_slug, place=metadata.place_slug, run_id=metadata.run_id) }}">Open dedicated view</a>
-  </div>
-  <p class="dataset-note">Master preserves all useful rows and evidence that survived validation and conservative dedupe.</p>
-  {% include "table_preview.html" with context %}
-</section>
 
 <section class="panel">
   <div class="section-heading">
@@ -90,6 +82,15 @@
   <p class="dataset-note">Outreach-ready is the simplified final lead list. It keeps only outreach-usable rows and shows business name, final phone/email, website, location, and source URL.</p>
   {% set preview = outreach_preview %}
   {% include "table_preview.html" %}
+</section>
+
+<section class="panel">
+  <div class="section-heading">
+    <h2>Master dataset</h2>
+    <a href="{{ url_for('results_master', niche=metadata.niche_slug, place=metadata.place_slug, run_id=metadata.run_id) }}">Open dedicated view</a>
+  </div>
+  <p class="dataset-note">Master preserves all useful rows and evidence that survived validation and conservative dedupe.</p>
+  {% include "table_preview.html" with context %}
 </section>
 
 {% if quality_summary %}
