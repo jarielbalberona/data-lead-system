@@ -287,6 +287,8 @@ def normalize_records(records: list[dict[str, object]]) -> pd.DataFrame:
         "business_name",
         "phone",
         "email",
+        "preferred_phone",
+        "preferred_email",
         "website",
         "address",
         "city",
@@ -313,8 +315,19 @@ def normalize_records(records: list[dict[str, object]]) -> pd.DataFrame:
     dataframe["city"] = location_values.map(lambda item: item[1])
     dataframe["state"] = location_values.map(lambda item: item[2])
 
-    dataframe["normalized_phone"] = dataframe["phone"].map(_normalize_phone)
-    dataframe["normalized_email"] = dataframe["email"]
+    preferred_phone_values = dataframe["preferred_phone"].map(_normalize_text)
+    preferred_email_values = dataframe["preferred_email"].map(_normalize_email)
+    dataframe["preferred_phone"] = preferred_phone_values
+    dataframe["preferred_email"] = preferred_email_values
+
+    dataframe["normalized_phone"] = preferred_phone_values.where(
+        preferred_phone_values.astype(bool),
+        dataframe["phone"],
+    ).map(_normalize_phone)
+    dataframe["normalized_email"] = preferred_email_values.where(
+        preferred_email_values.astype(bool),
+        dataframe["email"],
+    )
     dataframe["normalized_business_name"] = dataframe["business_name"].map(_normalize_text)
     dataframe["normalized_address"] = dataframe["address"].map(_normalize_text)
     dataframe["normalized_city"] = dataframe["city"].map(_normalize_text)

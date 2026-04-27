@@ -140,22 +140,26 @@ def apply_contact_enrichment(
         listing_phone = _normalize_phone(str(record.get("phone", "")).strip())
         best_email = _best_finding(domain_findings, "email")
         best_phone = _best_finding(domain_findings, "phone")
+        preferred_email = _select_preferred_email(listing_email, best_email, enriched)
+        preferred_phone = _select_preferred_phone(listing_phone, best_phone, enriched)
 
         enriched["listing_email"] = listing_email
         enriched["listing_phone"] = listing_phone
+        enriched["listing_email_is_generic"] = _is_generic_email(listing_email) if listing_email else False
         enriched["website_email"] = best_email.normalized_value if best_email else ""
         enriched["website_phone"] = best_phone.normalized_value if best_phone else ""
-        enriched["email_source_url"] = best_email.page_url if best_email else ""
-        enriched["phone_source_url"] = best_phone.page_url if best_phone else ""
-        enriched["email_extraction_method"] = best_email.extraction_method if best_email else ""
-        enriched["phone_extraction_method"] = best_phone.extraction_method if best_phone else ""
-        enriched["email_confidence"] = best_email.confidence if best_email else ""
-        enriched["phone_confidence"] = best_phone.confidence if best_phone else ""
         enriched["website_email_is_generic"] = bool(best_email.is_generic_email) if best_email else False
-        enriched["preferred_email"] = best_email.normalized_value if best_email else listing_email
-        enriched["preferred_phone"] = best_phone.normalized_value if best_phone else listing_phone
-        enriched["preferred_email_source"] = "website" if best_email else ("listing" if listing_email else "")
-        enriched["preferred_phone_source"] = "website" if best_phone else ("listing" if listing_phone else "")
+        enriched["preferred_email"] = preferred_email["value"]
+        enriched["preferred_phone"] = preferred_phone["value"]
+        enriched["preferred_email_source"] = preferred_email["source"]
+        enriched["preferred_phone_source"] = preferred_phone["source"]
+        enriched["preferred_email_is_generic"] = bool(preferred_email["is_generic"])
+        enriched["email_source_url"] = preferred_email["source_url"]
+        enriched["phone_source_url"] = preferred_phone["source_url"]
+        enriched["email_extraction_method"] = preferred_email["extraction_method"]
+        enriched["phone_extraction_method"] = preferred_phone["extraction_method"]
+        enriched["email_confidence"] = preferred_email["confidence"]
+        enriched["phone_confidence"] = preferred_phone["confidence"]
         enriched_records.append(enriched)
 
     return enriched_records
@@ -580,6 +584,79 @@ def _best_finding(findings: list[WebsiteContactFinding], contact_type: str) -> W
         ),
         reverse=True,
     )[0]
+
+
+def _select_preferred_email(
+    listing_email: str,
+    website_email: WebsiteContactFinding | None,
+    record: dict[str, object],
+) -> dict[str, object]:
+    listing_candidate = {
+        "value": listing_email,
+        "source": "listing" if listing_email else "",
+        "source_url": str(record.get("source_url", "")).strip() if listing_email else "",
+        "extraction_method": "listing_record" if listing_email else "",
+        "confidence": "low" if listing_email else "",
+        "is_generic": _is_generic_email(listing_email) if listing_email else False,
+    }
+
+    if website_email is None:
+        return listing_candidate
+    if not listing_email:
+        return _website_candidate(website_email)
+
+    listing_rank = CONFIDENCE_RANK.get(str(listing_candidate["confidence"]), 0)
+    website_rank = CONFIDENCE_RANK.get(website_email.confidence, 0)
+
+    if website_rank > listing_rank:
+        return _website_candidate(website_email)
+    if website_rank < listing_rank:
+        return listing_candidate
+
+    if bool(website_email.is_generic_email) and not bool(listing_candidate["is_generic"]):
+        return listing_candidate
+    if not bool(website_email.is_generic_email) and bool(listing_candidate["is_generic"]):
+        return _website_candidate(website_email)
+
+    return listing_candidate
+
+
+def _select_preferred_phone(
+    listing_phone: str,
+    website_phone: WebsiteContactFinding | None,
+    record: dict[str, object],
+) -> dict[str, object]:
+    listing_candidate = {
+        "value": listing_phone,
+        "source": "listing" if listing_phone else "",
+        "source_url": str(record.get("source_url", "")).strip() if listing_phone else "",
+        "extraction_method": "listing_record" if listing_phone else "",
+        "confidence": "low" if listing_phone else "",
+        "is_generic": False,
+    }
+
+    if website_phone is None:
+        return listing_candidate
+    if not listing_phone:
+        return _website_candidate(website_phone)
+
+    listing_rank = CONFIDENCE_RANK.get(str(listing_candidate["confidence"]), 0)
+    website_rank = CONFIDENCE_RANK.get(website_phone.confidence, 0)
+
+    if website_rank > listing_rank:
+        return _website_candidate(website_phone)
+    return listing_candidate
+
+
+def _website_candidate(finding: WebsiteContactFinding) -> dict[str, object]:
+    return {
+        "value": finding.normalized_value,
+        "source": "website",
+        "source_url": finding.page_url,
+        "extraction_method": finding.extraction_method,
+        "confidence": finding.confidence,
+        "is_generic": bool(finding.is_generic_email),
+    }
 
 
 def _preferred_final_url(website_domain: str, attempts: list[WebsitePageAttempt]) -> str:
