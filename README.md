@@ -172,7 +172,22 @@ Outreach-ready dataset:
 
 - emits one best representative row per outreach/contact group
 - uses transparent ranking instead of “first surviving row”
-- includes readiness flags and block reasons
+- keeps only outreach-usable rows
+- is the simplified final human-facing lead list, not the internal system export
+- exposes only final human-usable fields:
+  - `business_name`
+  - `phone`
+  - `email`
+  - `website`
+  - `address`
+  - `city`
+  - `state`
+  - `source_url`
+
+In other words:
+
+- `leads_master.csv` = internal/full pipeline truth with traceability and evidence
+- `leads_outreach_ready.csv` = simplified final list for human review and marketing/outreach use
 
 ## Enrichment Model
 

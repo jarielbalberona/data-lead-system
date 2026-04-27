@@ -50,8 +50,6 @@ MASTER_EXPORT_COLUMNS = [
 ]
 
 OUTREACH_EXPORT_COLUMNS = [
-    "lead_id",
-    "niche",
     "business_name",
     "phone",
     "email",
@@ -60,29 +58,6 @@ OUTREACH_EXPORT_COLUMNS = [
     "city",
     "state",
     "source_url",
-    "contact_group_id",
-    "business_group_id",
-    "location_group_id",
-    "dedupe_status",
-    "dedupe_reason",
-    "outreach_suppression_key",
-    "quality_score",
-    "extraction_timestamp",
-    "website_domain",
-    "normalized_phone",
-    "normalized_email",
-    "validation_status",
-    "rejection_reason",
-    "website_validation_status",
-    "website_validation_reason",
-    "website_final_url",
-    "website_pages_attempted",
-    "representative_group_key",
-    "representative_rank_reason",
-    "ready_for_email",
-    "ready_for_phone",
-    "ready_for_outreach",
-    "outreach_block_reason",
 ]
 
 TARGET_GEOGRAPHY_TERMS = [
@@ -404,14 +379,16 @@ def prepare_outreach_ready_export(dataframe: pd.DataFrame) -> pd.DataFrame:
 
     prepared = select_representative_rows(prepared)
     prepared = apply_outreach_readiness(prepared)
+    prepared = prepared[prepared["ready_for_outreach"] == True].copy()
+
+    prepared["phone"] = prepared["preferred_phone"]
+    prepared["email"] = prepared["preferred_email"]
 
     prepared = prepared.sort_values(
-        by=["niche", "quality_score", "business_name", "city"],
-        ascending=[True, False, True, True],
+        by=["business_name", "city", "state"],
+        ascending=[True, True, True],
+        kind="stable",
     ).reset_index(drop=True)
-
-    if len(prepared) > 100:
-        prepared = prepared.head(100).copy()
 
     for column_name in OUTREACH_EXPORT_COLUMNS:
         if column_name not in prepared.columns:
@@ -453,9 +430,9 @@ def write_quality_summary(
     multi_contact_groups = int((processed_contact_groups.value_counts() > 1).sum())
     multi_business_groups = int((processed_business_groups.value_counts() > 1).sum())
     multi_location_groups = int((processed_location_groups.value_counts() > 1).sum())
-    outreach_email_count = _truthy_count(_series_from_column(outreach_ready_dataframe, "normalized_email"))
-    outreach_phone_count = _truthy_count(_series_from_column(outreach_ready_dataframe, "normalized_phone"))
-    outreach_website_count = _truthy_count(_series_from_column(outreach_ready_dataframe, "website_domain"))
+    outreach_email_count = _truthy_count(_series_from_column(outreach_ready_dataframe, "email"))
+    outreach_phone_count = _truthy_count(_series_from_column(outreach_ready_dataframe, "phone"))
+    outreach_website_count = _truthy_count(_series_from_column(outreach_ready_dataframe, "website"))
     confirmed_duplicates = int((processed_dedupe_status == "confirmed_duplicate").sum())
     review_rows = int((_series_from_column(master_dataframe, "dedupe_status") == "possible_duplicate_needs_review").sum())
     discovery_raw_count = _load_json_row_count(discovery_raw_output_path)
@@ -473,8 +450,8 @@ def write_quality_summary(
     dead_website_count = int((processed_website_validation == "dead").sum())
     mismatched_website_count = int((processed_website_validation == "mismatch").sum())
     ready_series = _bool_series(outreach_ready_dataframe, "ready_for_outreach")
-    blocked_outreach_rows = int((~ready_series).sum())
-    ready_outreach_rows = int(ready_series.sum())
+    blocked_outreach_rows = 0 if "ready_for_outreach" not in outreach_ready_dataframe.columns else int((~ready_series).sum())
+    ready_outreach_rows = len(outreach_ready_dataframe) if "ready_for_outreach" not in outreach_ready_dataframe.columns else int(ready_series.sum())
     geography_counts = _geography_counts(master_dataframe)
 
     lines = [
