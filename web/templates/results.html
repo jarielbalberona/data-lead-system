@@ -87,7 +87,7 @@
     <h2>Outreach-ready dataset</h2>
     <a href="{{ url_for('results_outreach_ready', niche=metadata.niche_slug, place=metadata.place_slug, run_id=metadata.run_id) }}">Open dedicated view</a>
   </div>
-  <p class="dataset-note">Outreach-ready selects one best representative row per outreach/contact group.</p>
+  <p class="dataset-note">Outreach-ready is the simplified final lead list. It keeps only outreach-usable rows and shows business name, final phone/email, website, location, and source URL.</p>
   {% set preview = outreach_preview %}
   {% include "table_preview.html" %}
 </section>

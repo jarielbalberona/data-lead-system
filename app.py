@@ -141,6 +141,7 @@ def results_master(niche: str, place: str, run_id: str):
         filename="leads_master.csv",
         active_view="master",
         auto_refresh=auto_refresh,
+        dataset_note="Internal pipeline truth with traceability, evidence, and grouping context.",
     )
 
 
@@ -156,6 +157,7 @@ def results_outreach_ready(niche: str, place: str, run_id: str):
         filename="leads_outreach_ready.csv",
         active_view="outreach-ready",
         auto_refresh=auto_refresh,
+        dataset_note="Simplified final lead list for human review and marketing outreach. This view only shows business name, final phone/email, website, location, and source URL.",
     )
 
 

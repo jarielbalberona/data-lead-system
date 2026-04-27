@@ -29,6 +29,9 @@
     <h2>Preview</h2>
     <a href="{{ url_for('download_artifact', niche=metadata.niche_slug, place=metadata.place_slug, run_id=metadata.run_id, filename=filename) }}">Download CSV</a>
   </div>
+  {% if dataset_note %}
+  <p class="dataset-note">{{ dataset_note }}</p>
+  {% endif %}
   {% include "table_preview.html" %}
 </section>
 {% endblock %}
