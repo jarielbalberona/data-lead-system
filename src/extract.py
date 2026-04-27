@@ -32,6 +32,7 @@ class RawLeadRecord:
     source_listing_url: str
     source_registry_id: str = ""
     listing_page_id: str = ""
+    source_type: str = ""
     source_priority: int = 0
     listing_page_status: str = ""
     discovery_queries: str = ""
@@ -191,6 +192,7 @@ def _extract_hoa_profile(
         source_listing_url=listing_page.canonical_url,
         source_registry_id=listing_page.source_registry_id,
         listing_page_id=listing_page.listing_page_id,
+        source_type=listing_page.source_type,
         source_priority=listing_page.source_priority,
         listing_page_status=listing_page.listing_page_status,
         discovery_queries=" || ".join(listing_page.supporting_queries),
@@ -504,6 +506,7 @@ def _extract_ids_profile(
         source_listing_url=listing_page.canonical_url,
         source_registry_id=listing_page.source_registry_id,
         listing_page_id=listing_page.listing_page_id,
+        source_type=listing_page.source_type,
         source_priority=listing_page.source_priority,
         listing_page_status=listing_page.listing_page_status,
         discovery_queries=" || ".join(listing_page.supporting_queries),

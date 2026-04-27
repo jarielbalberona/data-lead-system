@@ -3,7 +3,7 @@ from __future__ import annotations
 from config import PipelineConfig
 from dedupe import apply_identity_resolution
 from enrich import enrich_records
-from export import export_final_csv, prepare_final_export, write_quality_summary
+from export import export_final_csv, export_master_csv, prepare_final_export, write_quality_summary
 from extract import extract_interior_designers, extract_property_managers
 from normalize import normalize_records
 
@@ -22,6 +22,7 @@ def run() -> None:
         return
 
     final_export = prepare_final_export(deduped)
+    export_master_csv(deduped, config.final_dir / "leads_master.csv")
     export_final_csv(deduped, config.final_dir / "leads.csv")
     write_quality_summary(
         raw_record_count=len(records),

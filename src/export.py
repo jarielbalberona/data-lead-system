@@ -7,6 +7,47 @@ import pandas as pd
 
 CONFIDENCE_RANK = {"high": 3, "medium": 2, "low": 1, "": 0}
 
+MASTER_EXPORT_COLUMNS = [
+    "lead_id",
+    "niche",
+    "business_name",
+    "address",
+    "city",
+    "state",
+    "source_url",
+    "source_listing_url",
+    "source_directory",
+    "source_type",
+    "source_priority",
+    "discovery_query",
+    "discovery_geography",
+    "listing_phone",
+    "listing_email",
+    "website",
+    "website_phone",
+    "website_email",
+    "preferred_phone",
+    "preferred_email",
+    "phone_source_url",
+    "email_source_url",
+    "phone_extraction_method",
+    "email_extraction_method",
+    "phone_confidence",
+    "email_confidence",
+    "website_validation_status",
+    "website_validation_reason",
+    "contact_group_id",
+    "business_group_id",
+    "location_group_id",
+    "dedupe_status",
+    "dedupe_reason",
+    "outreach_suppression_key",
+    "quality_score",
+    "validation_status",
+    "rejection_reason",
+    "extraction_timestamp",
+]
+
 FINAL_EXPORT_COLUMNS = [
     "lead_id",
     "niche",
@@ -293,6 +334,45 @@ def apply_outreach_readiness(dataframe: pd.DataFrame) -> pd.DataFrame:
     return prepared
 
 
+def prepare_master_export(dataframe: pd.DataFrame) -> pd.DataFrame:
+    prepared = dataframe.copy()
+    if prepared.empty:
+        return prepared
+
+    prepared = prepared[
+        (prepared["validation_status"] == "valid")
+        & (prepared["dedupe_status"] != "confirmed_duplicate")
+    ].copy()
+
+    prepared["lead_id"] = prepared.apply(_build_lead_id, axis=1)
+    prepared["quality_score"] = prepared.apply(_quality_score, axis=1)
+
+    _ensure_column(prepared, "source_type")
+    _ensure_column(prepared, "discovery_query")
+    _ensure_column(prepared, "discovery_geography")
+
+    prepared["discovery_query"] = prepared["discovery_query"].where(
+        prepared["discovery_query"].astype(str).str.strip().astype(bool),
+        prepared.get("discovery_queries", ""),
+    )
+    prepared["discovery_geography"] = prepared["discovery_geography"].where(
+        prepared["discovery_geography"].astype(str).str.strip().astype(bool),
+        prepared.get("supporting_geographies", ""),
+    )
+
+    prepared = prepared.sort_values(
+        by=["niche", "business_name", "contact_group_id", "city", "state", "lead_id"],
+        ascending=[True, True, True, True, True, True],
+        kind="stable",
+    ).reset_index(drop=True)
+
+    for column_name in MASTER_EXPORT_COLUMNS:
+        if column_name not in prepared.columns:
+            prepared[column_name] = ""
+
+    return prepared[MASTER_EXPORT_COLUMNS]
+
+
 def prepare_final_export(dataframe: pd.DataFrame) -> pd.DataFrame:
     prepared = dataframe.copy()
     if prepared.empty:
@@ -372,6 +452,11 @@ def write_quality_summary(
     )
 
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def export_master_csv(dataframe: pd.DataFrame, output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    prepare_master_export(dataframe).to_csv(output_path, index=False)
 
 
 def export_final_csv(dataframe: pd.DataFrame, output_path: Path) -> None:
