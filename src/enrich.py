@@ -51,43 +51,37 @@ class WebsiteContactFinding:
     extracted_at: str
 
 
+@dataclass(frozen=True)
+class WebsiteValidationResult:
+    website_domain: str
+    status: str
+    reason: str
+    final_url: str
+    pages_attempted: int
+
+
+@dataclass(frozen=True)
+class WebsiteProbeResult:
+    attempts: list[WebsitePageAttempt]
+    findings: list[WebsiteContactFinding]
+
+
 def discover_candidate_pages(
     records: list[dict[str, object]],
     config: PipelineConfig | None = None,
 ) -> list[WebsitePageAttempt]:
+    return probe_websites(records, config).attempts
+
+
+def probe_websites(
+    records: list[dict[str, object]],
+    config: PipelineConfig | None = None,
+) -> WebsiteProbeResult:
     runtime_config = config or PipelineConfig()
     runtime_config.ensure_directories()
     session = _build_session(runtime_config)
 
     attempts: list[WebsitePageAttempt] = []
-    seen_urls: set[str] = set()
-
-    for record in records:
-        website = str(record.get("website", "")).strip()
-        if not website:
-            continue
-
-        normalized_website, website_domain = _normalize_website(website)
-        if not normalized_website or not website_domain:
-            continue
-
-        for path_hint in LIKELY_CONTACT_PATHS:
-            requested_url = _build_probe_url(normalized_website, path_hint)
-            if requested_url in seen_urls:
-                continue
-            seen_urls.add(requested_url)
-            attempts.append(_fetch_attempt(session, requested_url, path_hint, website_domain, runtime_config))
-
-    return attempts
-
-
-def extract_website_contacts(
-    records: list[dict[str, object]],
-    config: PipelineConfig | None = None,
-) -> list[WebsiteContactFinding]:
-    runtime_config = config or PipelineConfig()
-    runtime_config.ensure_directories()
-    session = _build_session(runtime_config)
     findings: list[WebsiteContactFinding] = []
     seen_urls: set[str] = set()
 
@@ -105,24 +99,27 @@ def extract_website_contacts(
             if requested_url in seen_urls:
                 continue
             seen_urls.add(requested_url)
-
-            response = _fetch_page(session, requested_url, runtime_config)
-            if not response["ok"]:
-                continue
-
-            html = str(response["text"])
-            final_url = str(response["final_url"])
-            findings.extend(
-                _extract_contact_findings(
-                    website=normalized_website,
-                    website_domain=website_domain,
-                    page_url=final_url or requested_url,
-                    path_hint=path_hint,
-                    html=html,
+            attempt, html = _fetch_attempt(session, requested_url, path_hint, website_domain, runtime_config)
+            attempts.append(attempt)
+            if html:
+                findings.extend(
+                    _extract_contact_findings(
+                        website=normalized_website,
+                        website_domain=website_domain,
+                        page_url=attempt.final_url or requested_url,
+                        path_hint=path_hint,
+                        html=html,
+                    )
                 )
-            )
 
-    return _dedupe_contact_findings(findings)
+    return WebsiteProbeResult(attempts=attempts, findings=_dedupe_contact_findings(findings))
+
+
+def extract_website_contacts(
+    records: list[dict[str, object]],
+    config: PipelineConfig | None = None,
+) -> list[WebsiteContactFinding]:
+    return probe_websites(records, config).findings
 
 
 def apply_contact_enrichment(
@@ -164,6 +161,53 @@ def apply_contact_enrichment(
     return enriched_records
 
 
+def apply_website_validation(
+    records: list[dict[str, object]],
+    attempts: list[WebsitePageAttempt],
+    findings: list[WebsiteContactFinding],
+) -> list[dict[str, object]]:
+    attempts_by_domain: dict[str, list[WebsitePageAttempt]] = {}
+    for attempt in attempts:
+        attempts_by_domain.setdefault(attempt.website_domain, []).append(attempt)
+
+    findings_by_domain: dict[str, list[WebsiteContactFinding]] = {}
+    for finding in findings:
+        findings_by_domain.setdefault(finding.website_domain, []).append(finding)
+
+    validated_records: list[dict[str, object]] = []
+    for record in records:
+        validated = dict(record)
+        _, website_domain = _normalize_website(str(record.get("website", "")).strip())
+        domain_attempts = attempts_by_domain.get(website_domain, [])
+        domain_findings = findings_by_domain.get(website_domain, [])
+        validation = _build_validation_result(
+            website_domain=website_domain,
+            attempts=domain_attempts,
+            findings=domain_findings,
+        )
+        validated["website_validation_status"] = validation.status
+        validated["website_validation_reason"] = validation.reason
+        validated["website_final_url"] = validation.final_url
+        validated["website_pages_attempted"] = validation.pages_attempted
+        validated_records.append(validated)
+
+    return validated_records
+
+
+def enrich_records(
+    records: list[dict[str, object]],
+    config: PipelineConfig | None = None,
+) -> list[dict[str, object]]:
+    runtime_config = config or PipelineConfig()
+    runtime_config.ensure_directories()
+    probe_result = probe_websites(records, runtime_config)
+    _write_dataclass_payload(probe_result.attempts, runtime_config.website_page_attempts_output_path)
+    _write_dataclass_payload(probe_result.findings, runtime_config.website_contacts_output_path)
+
+    enriched = apply_contact_enrichment(records, probe_result.findings)
+    return apply_website_validation(enriched, probe_result.attempts, probe_result.findings)
+
+
 def write_candidate_pages(
     records: list[dict[str, object]],
     output_path: Path | None = None,
@@ -172,16 +216,8 @@ def write_candidate_pages(
 ) -> Path:
     runtime_config = config or PipelineConfig()
     path = output_path or runtime_config.website_page_attempts_output_path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    archive_dir = path.parent / "archive" / path.stem
-    archive_dir.mkdir(parents=True, exist_ok=True)
-
     attempts = discover_candidate_pages(records, runtime_config)
-    payload = json.dumps([asdict(attempt) for attempt in attempts], indent=2)
-    path.write_text(payload, encoding="utf-8")
-
-    timestamp = _timestamp_now()
-    archive_dir.joinpath(f"{_snapshot_token(timestamp)}.json").write_text(payload, encoding="utf-8")
+    _write_dataclass_payload(attempts, path)
     return path
 
 
@@ -193,16 +229,8 @@ def write_website_contacts(
 ) -> Path:
     runtime_config = config or PipelineConfig()
     path = output_path or runtime_config.website_contacts_output_path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    archive_dir = path.parent / "archive" / path.stem
-    archive_dir.mkdir(parents=True, exist_ok=True)
-
     findings = extract_website_contacts(records, runtime_config)
-    payload = json.dumps([asdict(finding) for finding in findings], indent=2)
-    path.write_text(payload, encoding="utf-8")
-
-    timestamp = _timestamp_now()
-    archive_dir.joinpath(f"{_snapshot_token(timestamp)}.json").write_text(payload, encoding="utf-8")
+    _write_dataclass_payload(findings, path)
     return path
 
 
@@ -224,9 +252,9 @@ def _fetch_attempt(
     path_hint: str,
     website_domain: str,
     config: PipelineConfig,
-) -> WebsitePageAttempt:
+) -> tuple[WebsitePageAttempt, str]:
     response = _fetch_page(session, requested_url, config)
-    return WebsitePageAttempt(
+    attempt = WebsitePageAttempt(
         website=requested_url if path_hint == "/" else requested_url.rsplit(path_hint, 1)[0],
         website_domain=website_domain,
         path_hint=path_hint,
@@ -237,6 +265,7 @@ def _fetch_attempt(
         failure_reason=str(response["failure_reason"]),
         attempted_at=_timestamp_now(),
     )
+    return attempt, str(response["text"]) if response["ok"] else ""
 
 
 def _normalize_website(website: str) -> tuple[str, str]:
@@ -458,6 +487,83 @@ def _dedupe_contact_findings(findings: list[WebsiteContactFinding]) -> list[Webs
     return list(deduped.values())
 
 
+def _build_validation_result(
+    *,
+    website_domain: str,
+    attempts: list[WebsitePageAttempt],
+    findings: list[WebsiteContactFinding],
+) -> WebsiteValidationResult:
+    if not website_domain:
+        return WebsiteValidationResult(
+            website_domain="",
+            status="missing_website",
+            reason="No website was available for enrichment.",
+            final_url="",
+            pages_attempted=0,
+        )
+
+    successful_attempts = [attempt for attempt in attempts if attempt.fetch_status == "fetched" and attempt.final_url]
+    same_domain_attempts = [
+        attempt
+        for attempt in successful_attempts
+        if _domains_match(website_domain, _normalize_final_domain(attempt.final_url))
+    ]
+    final_url = _preferred_final_url(website_domain, successful_attempts)
+
+    if not successful_attempts:
+        failure_reasons = sorted(
+            {
+                attempt.failure_reason
+                for attempt in attempts
+                if attempt.failure_reason
+            }
+        )
+        reason = "Website could not be fetched from any of the probed pages."
+        if failure_reasons:
+            reason = f"{reason} Last observed failures: {', '.join(failure_reasons[:3])}."
+        return WebsiteValidationResult(
+            website_domain=website_domain,
+            status="dead",
+            reason=reason,
+            final_url="",
+            pages_attempted=len(attempts),
+        )
+
+    if not same_domain_attempts:
+        redirected_domains = sorted(
+            {
+                _normalize_final_domain(attempt.final_url)
+                for attempt in successful_attempts
+                if _normalize_final_domain(attempt.final_url)
+            }
+        )
+        redirected_text = ", ".join(redirected_domains[:3]) if redirected_domains else "another domain"
+        return WebsiteValidationResult(
+            website_domain=website_domain,
+            status="mismatch",
+            reason=f"Website resolved away from the claimed domain and ended on {redirected_text}.",
+            final_url=final_url,
+            pages_attempted=len(attempts),
+        )
+
+    if findings:
+        return WebsiteValidationResult(
+            website_domain=website_domain,
+            status="valid",
+            reason="Same-domain website responded and yielded contact evidence.",
+            final_url=final_url,
+            pages_attempted=len(attempts),
+        )
+
+    return WebsiteValidationResult(
+        website_domain=website_domain,
+        status="no_contact_found",
+        reason="Same-domain website responded but no email or phone was found on the probed pages.",
+        final_url=final_url,
+        pages_attempted=len(attempts),
+    )
+
+
 def _best_finding(findings: list[WebsiteContactFinding], contact_type: str) -> WebsiteContactFinding | None:
     candidates = [finding for finding in findings if finding.contact_type == contact_type]
     if not candidates:
@@ -474,6 +580,47 @@ def _best_finding(findings: list[WebsiteContactFinding], contact_type: str) -> W
         ),
         reverse=True,
     )[0]
+
+
+def _preferred_final_url(website_domain: str, attempts: list[WebsitePageAttempt]) -> str:
+    for attempt in attempts:
+        final_domain = _normalize_final_domain(attempt.final_url)
+        if final_domain and _domains_match(website_domain, final_domain):
+            return attempt.final_url
+
+    for attempt in attempts:
+        if attempt.final_url:
+            return attempt.final_url
+
+    return ""
+
+
+def _normalize_final_domain(url: str) -> str:
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    domain = parsed.netloc.lower()
+    if domain.startswith("www."):
+        domain = domain.removeprefix("www.")
+    return domain
+
+
+def _domains_match(left: str, right: str) -> bool:
+    if not left or not right:
+        return False
+    return left == right or left.endswith(f".{right}") or right.endswith(f".{left}")
+
+
+def _write_dataclass_payload(items: list[object], output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    archive_dir = output_path.parent / "archive" / output_path.stem
+    archive_dir.mkdir(parents=True, exist_ok=True)
+
+    payload = json.dumps([asdict(item) for item in items], indent=2)
+    output_path.write_text(payload, encoding="utf-8")
+
+    timestamp = _timestamp_now()
+    archive_dir.joinpath(f"{_snapshot_token(timestamp)}.json").write_text(payload, encoding="utf-8")
 
 
 def _timestamp_now() -> str:

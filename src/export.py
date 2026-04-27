@@ -30,6 +30,10 @@ FINAL_EXPORT_COLUMNS = [
     "normalized_email",
     "validation_status",
     "rejection_reason",
+    "website_validation_status",
+    "website_validation_reason",
+    "website_final_url",
+    "website_pages_attempted",
 ]
 
 
