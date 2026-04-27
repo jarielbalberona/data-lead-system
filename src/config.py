@@ -43,3 +43,20 @@ class PipelineConfig:
         self.raw_dir.mkdir(parents=True, exist_ok=True)
         self.processed_dir.mkdir(parents=True, exist_ok=True)
         self.final_dir.mkdir(parents=True, exist_ok=True)
+        self.docs_dir.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def master_output_path(self) -> Path:
+        return self.final_dir / "leads_master.csv"
+
+    @property
+    def outreach_ready_output_path(self) -> Path:
+        return self.final_dir / "leads_outreach_ready.csv"
+
+    @property
+    def quality_summary_output_path(self) -> Path:
+        return self.docs_dir / "quality_summary.md"
+
+    @property
+    def run_metadata_output_path(self) -> Path:
+        return self.final_dir / "run_metadata.json"

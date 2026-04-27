@@ -357,7 +357,7 @@ def apply_outreach_readiness(dataframe: pd.DataFrame) -> pd.DataFrame:
 def prepare_master_export(dataframe: pd.DataFrame) -> pd.DataFrame:
     prepared = dataframe.copy()
     if prepared.empty:
-        return prepared
+        return pd.DataFrame(columns=MASTER_EXPORT_COLUMNS)
 
     prepared = prepared[
         (prepared["validation_status"] == "valid")
@@ -400,7 +400,7 @@ def prepare_final_export(dataframe: pd.DataFrame) -> pd.DataFrame:
 def prepare_outreach_ready_export(dataframe: pd.DataFrame) -> pd.DataFrame:
     prepared = dataframe.copy()
     if prepared.empty:
-        return prepared
+        return pd.DataFrame(columns=OUTREACH_EXPORT_COLUMNS)
 
     prepared = select_representative_rows(prepared)
     prepared = apply_outreach_readiness(prepared)

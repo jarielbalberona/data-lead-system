@@ -10,6 +10,6 @@ data/raw/archive/
 data/processed/*.tmp
 data/processed/*.json
 data/processed/archive/
-data/final/*.tmp
-data/final/*.csv
+data/final/**
 docs/quality-summary.md
+docs/quality_summary.md
