@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import signal
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -107,6 +109,8 @@ class RunContext:
         finished_at: str | None = None,
         key_counts: dict[str, int] | None = None,
         error_summary: str = "",
+        pipeline_pid: int | None = None,
+        stop_reason: str = "",
     ) -> dict[str, Any]:
         payload = {
             "run_id": self.run_id,
@@ -123,6 +127,8 @@ class RunContext:
             "output_paths": self.output_paths(),
             "key_counts": key_counts or {},
             "error_summary": error_summary,
+            "pipeline_pid": pipeline_pid,
+            "stop_reason": stop_reason,
         }
         return payload
 
@@ -134,17 +140,46 @@ class RunContext:
         finished_at: str | None = None,
         key_counts: dict[str, int] | None = None,
         error_summary: str = "",
+        pipeline_pid: int | None = None,
+        stop_reason: str = "",
     ) -> dict[str, Any]:
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        existing = {}
+        if self.run_metadata_path.exists():
+            try:
+                existing = load_run_metadata(self.run_metadata_path)
+            except (OSError, json.JSONDecodeError):
+                existing = {}
         payload = self.metadata_payload(
             started_at=started_at,
             status=status,
             finished_at=finished_at,
             key_counts=key_counts,
             error_summary=error_summary,
+            pipeline_pid=existing.get("pipeline_pid") if pipeline_pid is None else pipeline_pid,
+            stop_reason=stop_reason or str(existing.get("stop_reason", "")),
         )
         self.run_metadata_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return payload
+
+    @classmethod
+    def from_metadata(cls, metadata: dict[str, Any], *, project_root: Path = PROJECT_ROOT) -> "RunContext":
+        return cls(
+            run_id=str(metadata["run_id"]),
+            niche_input=str(metadata.get("niche_input", metadata.get("niche_display_name", ""))),
+            place_input=str(metadata.get("place_input", metadata.get("place_display_name", ""))),
+            niche_key=str(metadata["niche_key"]),
+            niche_slug=str(metadata["niche_slug"]),
+            niche_display_name=str(metadata["niche_display_name"]),
+            place_slug=str(metadata["place_slug"]),
+            place_display_name=str(metadata["place_display_name"]),
+            output_dir=resolve_run_dir(
+                str(metadata["niche_slug"]),
+                str(metadata["place_slug"]),
+                str(metadata["run_id"]),
+            ),
+            project_root=project_root,
+        )
 
 
 def slugify(value: str) -> str:
@@ -239,6 +274,39 @@ def list_run_metadata(
     return metadata_rows
 
 
+def stop_run_from_metadata(metadata: dict[str, Any], *, reason: str = "Stopped by operator") -> dict[str, Any]:
+    context = RunContext.from_metadata(metadata)
+    pid = _parse_pid(metadata.get("pipeline_pid"))
+    finished_at = _utc_now()
+
+    if str(metadata.get("status", "")).strip() != "running":
+        return context.write_metadata(
+            started_at=str(metadata.get("started_at") or finished_at),
+            finished_at=str(metadata.get("finished_at") or finished_at),
+            status=str(metadata.get("status") or "stopped"),
+            key_counts=_coerce_key_counts(metadata.get("key_counts")),
+            error_summary=str(metadata.get("error_summary", "")),
+            pipeline_pid=pid,
+            stop_reason=reason if str(metadata.get("status", "")).strip() == "stopped" else "",
+        )
+
+    if pid is not None:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            reason = "Process was already gone when stop was requested"
+        except PermissionError as error:
+            reason = f"PermissionError: {error}"
+
+    return context.write_metadata(
+        started_at=str(metadata.get("started_at") or finished_at),
+        finished_at=finished_at,
+        status="stopped",
+        key_counts=_coerce_key_counts(metadata.get("key_counts")),
+        error_summary=str(metadata.get("error_summary", "")),
+        pipeline_pid=pid,
+        stop_reason=reason,
+    )
 def _resolve_niche(niche_input: str) -> tuple[str, str, str]:
     normalized = slugify(niche_input)
     for niche_key, metadata in SUPPORTED_NICHES.items():
@@ -269,3 +337,26 @@ def _relative_path(path: Path, root: Path) -> str:
         return str(path.relative_to(root))
     except ValueError:
         return str(path)
+
+
+def _coerce_key_counts(value: Any) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    counts: dict[str, int] = {}
+    for key, item in value.items():
+        try:
+            counts[str(key)] = int(item)
+        except (TypeError, ValueError):
+            continue
+    return counts
+
+
+def _parse_pid(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _utc_now() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")

@@ -20,6 +20,13 @@
       <div><strong>Started:</strong> {{ metadata.started_at }}</div>
       <div><strong>Finished:</strong> {{ metadata.finished_at or "still running" }}</div>
     </div>
+    <div class="run-actions">
+      {% if metadata.status == "running" %}
+      <form action="{{ url_for('stop_run', niche=metadata.niche_slug, place=metadata.place_slug, run_id=metadata.run_id) }}" method="post">
+        <button type="submit" class="secondary-button">Stop run</button>
+      </form>
+      {% endif %}
+    </div>
   </div>
 </section>
 
@@ -43,6 +50,13 @@
 <section class="panel error-panel">
   <h2>Run error</h2>
   <pre>{{ metadata.error_summary }}</pre>
+</section>
+{% endif %}
+
+{% if metadata.stop_reason %}
+<section class="panel running-panel">
+  <h2>Stop note</h2>
+  <p>{{ metadata.stop_reason }}</p>
 </section>
 {% endif %}
 

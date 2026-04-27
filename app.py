@@ -13,7 +13,7 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from runs import list_run_metadata, load_run_metadata, resolve_run_context, resolve_run_dir
+from runs import list_run_metadata, load_run_metadata, resolve_run_context, resolve_run_dir, stop_run_from_metadata
 
 
 PREVIEW_ROW_LIMIT = 25
@@ -73,7 +73,12 @@ def submit_run():
             started_at=_utc_now(),
             status="running",
         )
-        _launch_pipeline_subprocess(context)
+        process = _launch_pipeline_subprocess(context)
+        context.write_metadata(
+            started_at=_utc_now(),
+            status="running",
+            pipeline_pid=process.pid,
+        )
     except Exception as error:
         context.write_metadata(
             started_at=_utc_now(),
@@ -166,6 +171,13 @@ def download_artifact(niche: str, place: str, run_id: str, filename: str):
     return send_file(file_path, as_attachment=True, download_name=filename)
 
 
+@app.post("/results/<niche>/<place>/<run_id>/stop")
+def stop_run(niche: str, place: str, run_id: str):
+    _run_dir, metadata = _load_run(niche, place, run_id)
+    stop_run_from_metadata(metadata)
+    return redirect(url_for("results", niche=niche, place=place, run_id=run_id))
+
+
 def _load_run(niche: str, place: str, run_id: str) -> tuple[Path, dict[str, object]]:
     run_dir = resolve_run_dir(niche, place, run_id)
     metadata_path = run_dir / "run_metadata.json"
@@ -198,7 +210,7 @@ def _read_text_file(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def _launch_pipeline_subprocess(context) -> None:
+def _launch_pipeline_subprocess(context) -> subprocess.Popen:
     command = [
         sys.executable,
         str(SRC_DIR / "run_pipeline.py"),
@@ -211,7 +223,7 @@ def _launch_pipeline_subprocess(context) -> None:
         "--output-dir",
         str(context.output_dir),
     ]
-    subprocess.Popen(
+    return subprocess.Popen(
         command,
         cwd=PROJECT_ROOT,
         stdout=subprocess.DEVNULL,

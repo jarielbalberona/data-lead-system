@@ -135,6 +135,35 @@ a {
   flex-wrap: wrap;
 }
 
+.status-block {
+  align-items: flex-end;
+}
+
+.run-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.run-actions form {
+  margin: 0;
+}
+
+.secondary-button {
+  min-height: 40px;
+  border-radius: 6px;
+  border: 1px solid #cbd2d9;
+  padding: 0 14px;
+  font-size: 14px;
+  cursor: pointer;
+  background: #fff;
+  color: #1f2933;
+}
+
+.secondary-button:hover {
+  background: #f8fafc;
+}
+
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -179,6 +208,11 @@ a {
 .status.failed {
   background: #fee2e2;
   color: #b91c1c;
+}
+
+.status.stopped {
+  background: #fef3c7;
+  color: #92400e;
 }
 
 .status.done {
