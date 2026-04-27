@@ -4,6 +4,8 @@ import re
 
 import pandas as pd
 
+GENERIC_EMAIL_LOCALS = {"info", "hello", "contact", "office", "admin"}
+
 
 class UnionFind:
     def __init__(self, size: int) -> None:
@@ -26,22 +28,52 @@ def _ensure_column(dataframe: pd.DataFrame, column_name: str) -> None:
         dataframe[column_name] = ""
 
 
+def _is_generic_email(value: str) -> bool:
+    if "@" not in value:
+        return False
+    return value.split("@", 1)[0].strip().lower() in GENERIC_EMAIL_LOCALS
+
+
+def _contact_email_group_key(row: pd.Series, normalized_email: str) -> str:
+    if not normalized_email:
+        return ""
+    if not _is_generic_email(normalized_email):
+        return normalized_email
+
+    website_domain = str(row.get("website_domain", "")).strip().lower()
+    if website_domain:
+        return f"{normalized_email}|{website_domain}"
+    return ""
+
+
 def _assign_contact_group_ids(dataframe: pd.DataFrame) -> pd.DataFrame:
     normalized = dataframe.copy()
     union_find = UnionFind(len(normalized))
 
-    for column_name in ["normalized_email", "normalized_phone"]:
-        groups: dict[str, list[int]] = {}
-        for index, value in normalized[column_name].fillna("").items():
-            normalized_value = str(value).strip()
-            if not normalized_value:
-                continue
-            groups.setdefault(normalized_value, []).append(index)
+    phone_groups: dict[str, list[int]] = {}
+    for index, value in normalized["normalized_phone"].fillna("").items():
+        normalized_value = str(value).strip()
+        if not normalized_value:
+            continue
+        phone_groups.setdefault(normalized_value, []).append(index)
 
-        for matching_indexes in groups.values():
-            anchor = matching_indexes[0]
-            for duplicate_index in matching_indexes[1:]:
-                union_find.union(anchor, duplicate_index)
+    for matching_indexes in phone_groups.values():
+        anchor = matching_indexes[0]
+        for duplicate_index in matching_indexes[1:]:
+            union_find.union(anchor, duplicate_index)
+
+    email_groups: dict[str, list[int]] = {}
+    for index, row in normalized.iterrows():
+        normalized_email = str(row.get("normalized_email", "")).strip().lower()
+        group_key = _contact_email_group_key(row, normalized_email)
+        if not group_key:
+            continue
+        email_groups.setdefault(group_key, []).append(index)
+
+    for matching_indexes in email_groups.values():
+        anchor = matching_indexes[0]
+        for duplicate_index in matching_indexes[1:]:
+            union_find.union(anchor, duplicate_index)
 
     root_to_group_id: dict[int, str] = {}
     contact_group_ids: list[str] = []
