@@ -37,6 +37,10 @@ FINAL_EXPORT_COLUMNS = [
     "website_pages_attempted",
     "representative_group_key",
     "representative_rank_reason",
+    "ready_for_email",
+    "ready_for_phone",
+    "ready_for_outreach",
+    "outreach_block_reason",
 ]
 
 
@@ -231,12 +235,71 @@ def select_representative_rows(dataframe: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def apply_outreach_readiness(dataframe: pd.DataFrame) -> pd.DataFrame:
+    prepared = dataframe.copy()
+    if prepared.empty:
+        return prepared
+
+    for column_name in [
+        "preferred_email",
+        "preferred_phone",
+        "preferred_email_source",
+        "preferred_phone_source",
+        "website_validation_status",
+        "validation_status",
+        "rejection_reason",
+    ]:
+        _ensure_column(prepared, column_name)
+
+    ready_for_email: list[bool] = []
+    ready_for_phone: list[bool] = []
+    ready_for_outreach: list[bool] = []
+    block_reasons: list[str] = []
+
+    for _, row in prepared.iterrows():
+        validation_status = str(row.get("validation_status", "")).strip()
+        website_validation_status = str(row.get("website_validation_status", "")).strip()
+        preferred_email = str(row.get("preferred_email", "")).strip()
+        preferred_phone = str(row.get("preferred_phone", "")).strip()
+        preferred_email_source = str(row.get("preferred_email_source", "")).strip()
+        preferred_phone_source = str(row.get("preferred_phone_source", "")).strip()
+
+        email_ready = bool(preferred_email) and not (
+            website_validation_status == "mismatch" and preferred_email_source == "website"
+        )
+        phone_ready = bool(preferred_phone) and not (
+            website_validation_status == "mismatch" and preferred_phone_source == "website"
+        )
+        outreach_ready = email_ready or phone_ready
+
+        if validation_status != "valid":
+            block_reason = str(row.get("rejection_reason", "")).strip() or "Row failed base validation."
+        elif website_validation_status == "mismatch" and not outreach_ready:
+            block_reason = "Website mismatched and no safe listing-derived contact survived."
+        elif not outreach_ready:
+            block_reason = "No usable preferred email or phone is available for outreach."
+        else:
+            block_reason = ""
+
+        ready_for_email.append(email_ready)
+        ready_for_phone.append(phone_ready)
+        ready_for_outreach.append(outreach_ready)
+        block_reasons.append(block_reason)
+
+    prepared["ready_for_email"] = ready_for_email
+    prepared["ready_for_phone"] = ready_for_phone
+    prepared["ready_for_outreach"] = ready_for_outreach
+    prepared["outreach_block_reason"] = block_reasons
+    return prepared
+
+
 def prepare_final_export(dataframe: pd.DataFrame) -> pd.DataFrame:
     prepared = dataframe.copy()
     if prepared.empty:
         return prepared
 
     prepared = select_representative_rows(prepared)
+    prepared = apply_outreach_readiness(prepared)
 
     prepared = prepared.sort_values(
         by=["niche", "quality_score", "business_name", "city"],
