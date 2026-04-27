@@ -37,26 +37,13 @@ Supported niches:
 - property managers
 - interior designers
 
-Supported New York geography targets:
+Supported New York **geography buckets** (broad, source-aligned, not a guarantee of a single city or borough):
 
-- New York City
-- Brooklyn
-- Queens
-- Manhattan
-- Bronx
-- Staten Island
-- Yonkers
-- White Plains
-- New Rochelle
-- Mount Vernon
-- Long Island
-- Hempstead
-- Oyster Bay
-- Huntington
-- Brookhaven
-- Islip
+- **New York** — NYC metro / five boroughs and the usual “New York / NYC / New York City” use cases (borought names you type, such as Brooklyn or Queens, are mapped into this bucket)
+- **Long Island** — Nassau / Suffolk and common Long Island place names, mapped to one bucket
+- **Westchester** — Westchester County and major cities in that bucket (e.g. Yonkers) map here
 
-`New York` is treated as a broader NYC target, not as Manhattan-only.
+**Why buckets:** The discovery sites are regional directories and state pages, not a complete set of per-city sources. This model **improves hit rate and honest labeling** (fewer empty runs and less fake precision) instead of advertising borough-by-borough or city-by-city support we cannot actually back. Interior designer listings, in particular, are **region-based** (one regional listing page can serve a chosen bucket). Property manager city links are still walked when the HOA site provides them, but are tagged to these buckets, not to exact municipal boundaries.
 
 ## Sources
 
@@ -104,7 +91,7 @@ This repo includes a [`render.yaml`](render.yaml) Blueprint for a single **Pytho
 5. **Health check:** `GET /healthz` (plain 200)  
 6. **Disk:** mounted at `/var/data`; **`DATA_ROOT=/var/data`** so run artifacts survive redeploys and restarts.
 
-**Where outputs live on Render:** under `/var/data/final/{niche_slug}/{place_slug}/{run_id}/` (for example `/var/data/final/property-managers/new-york-city/2026-04-27t173500z/`).
+**Where outputs live on Render:** under `/var/data/final/{niche_slug}/{place_slug}/{run_id}/` (for example `/var/data/final/property-managers/new-york/2026-04-27t173500z/`).
 
 **Local vs production:** locally, if `DATA_ROOT` is unset, the app uses the repo’s `data/` directory (`data/final/...`) as today. On Render, `DATA_ROOT` points at the attached disk. Shared pipeline paths under `data/raw` and `data/processed` in code also follow `DATA_ROOT` when set, so intermediate files on Render stay on the disk, not the ephemeral filesystem.
 
@@ -113,7 +100,7 @@ This repo includes a [`render.yaml`](render.yaml) Blueprint for a single **Pytho
 ## Run the Pipeline Directly
 
 ```bash
-python3 src/run_pipeline.py --niche "property managers" --place "New York City"
+python3 src/run_pipeline.py --niche "property managers" --place "New York"
 ```
 
 Optional arguments:
@@ -134,7 +121,7 @@ Locally (default), `{DATA_ROOT}` is the `data/` folder next to the repo, so path
 Example:
 
 ```txt
-data/final/property-managers/new-york-city/2026-04-27t173500z/
+data/final/property-managers/new-york/2026-04-27t173500z/
 ```
 
 Each run folder contains at least:

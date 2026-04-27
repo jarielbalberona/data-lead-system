@@ -24,14 +24,9 @@ DOWNLOADABLE_FILENAMES = {
     "quality_summary.md",
 }
 PLACE_EXAMPLES = [
-    "New York City",
-    "Brooklyn",
-    "Queens",
-    "Manhattan",
-    "Bronx",
-    "Staten Island",
-    "Yonkers",
-    "White Plains",
+    "New York",
+    "Long Island",
+    "Westchester",
 ]
 
 app = Flask(__name__, template_folder="web/templates", static_folder="web/static")

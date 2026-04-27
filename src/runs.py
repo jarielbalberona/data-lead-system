@@ -41,9 +41,29 @@ SUPPORTED_NICHES: dict[str, dict[str, object]] = {
     },
 }
 
+# Map free-text and legacy city/borough slugs to the three broad, source-aligned bucket slugs.
 PLACE_ALIASES = {
-    "new-york": "new-york-city",
-    "nyc": "new-york-city",
+    "new-york-city": "new-york",
+    "nyc": "new-york",
+    "manhattan": "new-york",
+    "brooklyn": "new-york",
+    "queens": "new-york",
+    "bronx": "new-york",
+    "staten-island": "new-york",
+    "yonkers": "westchester",
+    "white-plains": "westchester",
+    "new-rochelle": "westchester",
+    "mount-vernon": "westchester",
+    "hempstead": "long-island",
+    "oyster-bay": "long-island",
+    "huntington": "long-island",
+    "brookhaven": "long-island",
+    "islip": "long-island",
+    "nassau": "long-island",
+    "suffolk": "long-island",
+    "nassau-county": "long-island",
+    "suffolk-county": "long-island",
+    "westchester-county": "westchester",
 }
 
 
@@ -402,7 +422,8 @@ def _resolve_place(place_input: str) -> tuple[str, str]:
 
     supported = ", ".join(geography.display_name for geography in NEW_YORK_GEOGRAPHIES)
     raise ValueError(
-        f"Unsupported place '{place_input}'. This showcase only supports New York targets: {supported}."
+        f"Unsupported place '{place_input}'. This showcase uses broad New York area buckets: {supported} "
+        f"(city or borough names like Brooklyn or Queens are mapped to New York)."
     )
 
 

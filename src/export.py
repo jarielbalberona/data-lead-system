@@ -60,18 +60,25 @@ OUTREACH_EXPORT_COLUMNS = [
     "source_url",
 ]
 
+# Used only for quality-summary hints when city/location text from sources matches. Includes bucket
+# names and common sub-area terms; source text may still be regional, not a precise address.
 TARGET_GEOGRAPHY_TERMS = [
+    "New York",
+    "NYC",
+    "Long Island",
+    "Westchester",
     "New York City",
     "Brooklyn",
     "Queens",
     "Manhattan",
     "Bronx",
     "Staten Island",
+    "Nassau",
+    "Suffolk",
     "Yonkers",
     "White Plains",
     "New Rochelle",
     "Mount Vernon",
-    "Long Island",
     "Hempstead",
     "Oyster Bay",
     "Huntington",

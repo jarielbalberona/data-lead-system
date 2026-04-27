@@ -24,7 +24,7 @@
     </label>
     <label>
       <span>Place</span>
-      <input name="place" type="text" list="place-options" placeholder="New York City" required>
+      <input name="place" type="text" list="place-options" placeholder="New York" required>
       <datalist id="place-options">
         {% for place in place_examples %}
         <option value="{{ place }}"></option>
@@ -39,7 +39,7 @@
   </div>
   <div class="helper-copy">
     <p>Supported niches: property managers, interior designers.</p>
-    <p>Supported places are constrained to the New York geography set used by the current discovery model.</p>
+    <p>Places are broad New York area buckets (New York, Long Island, Westchester). Borough or city names you type in are mapped to a bucket, not a precise boundary.</p>
   </div>
 </section>
 

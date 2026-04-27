@@ -5,6 +5,7 @@ import argparse
 from config import PipelineConfig
 from dedupe import apply_identity_resolution
 from discovery import (
+    NY_BROAD_BUCKET_SLUGS,
     classify_candidate_listing_urls,
     collect_candidate_listing_urls,
     write_discovery_seeds,
@@ -112,12 +113,42 @@ def run_with_context(context: RunContext) -> dict[str, object]:
 
 
 def _filtered_candidates(context: RunContext, candidates: list[object]) -> list[object]:
-    return [
+    niche = context.niche_key
+    place = context.place_slug
+    matching = [
         candidate
         for candidate in candidates
-        if getattr(candidate, "niche", "") == context.niche_key
-        and getattr(candidate, "geography_slug", "") == context.place_slug
+        if getattr(candidate, "niche", "") == niche and getattr(candidate, "geography_slug", "") == place
     ]
+    if matching:
+        return matching
+
+    # Interior designer discovery is region-backed (one listing URL for all NY buckets). If the exact
+    # bucket row is missing from the candidate list, fall back to another NY bucket row that uses
+    # the same regional URL so we do not zero out on partial discovery.
+    if niche == "interior_designer":
+        regional = [
+            c
+            for c in candidates
+            if getattr(c, "niche", "") == "interior_designer"
+            and getattr(c, "geography_slug", "") in NY_BROAD_BUCKET_SLUGS
+        ]
+        by_url: dict[str, list[object]] = {}
+        for c in regional:
+            u = str(getattr(c, "candidate_url", "") or "")
+            by_url.setdefault(u, []).append(c)
+        for group in by_url.values():
+            for c in group:
+                if getattr(c, "geography_slug", "") == place:
+                    return [c]
+        for slug in (place, "new-york"):
+            for c in regional:
+                if getattr(c, "geography_slug", "") == slug:
+                    return [c]
+        if len(regional) == 1:
+            return regional
+
+    return []
 
 
 def _extract_records_for_niche(
@@ -141,7 +172,11 @@ def _utc_now() -> str:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the lead extraction pipeline for one niche/place showcase run.")
     parser.add_argument("--niche", required=True, help="Lead niche to run, for example 'property managers'.")
-    parser.add_argument("--place", required=True, help="New York place to target, for example 'Brooklyn'.")
+    parser.add_argument(
+        "--place",
+        required=True,
+        help="Broad New York area bucket, for example 'New York', 'Long Island', or 'Westchester'.",
+    )
     parser.add_argument("--run-id", help="Optional explicit run id. Defaults to a UTC timestamp token.")
     parser.add_argument(
         "--output-dir",
